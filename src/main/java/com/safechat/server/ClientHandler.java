@@ -36,6 +36,8 @@ public class ClientHandler implements Runnable {
                 // narazie wysylamy do wszystkich
                 connectionManager.broadcast(message);
             }
+        } catch (java.io.EOFException e) {
+            System.out.println("Client disconnected");
         } catch (IOException | ClassNotFoundException e) {
             System.err.println("Error: " + e.getMessage());
         } finally {
