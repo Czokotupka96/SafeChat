@@ -4,6 +4,7 @@ import com.safechat.shared.MessageDTO;
 
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.io.ObjectInputStream;
 import java.net.Socket;
 
 public class ClientMain {
@@ -15,8 +16,9 @@ public class ClientMain {
         try (Socket socket = new Socket("localhost", 5000)) {
             System.out.println("Established connection with server");
 
-            // obiekt do wysylania wiadomosci
+            // inicjalizacja strumieni
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+            ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
 
             // wiadomosc testowa
             MessageDTO message = new MessageDTO(MessageDTO.MessageType.JOIN, "Nick123", "ALL", "Hello world");
@@ -26,8 +28,17 @@ public class ClientMain {
             out.flush();
             System.out.println("Message sent");
 
-        } catch (IOException e) {
-            System.err.println("Error, couldn't connect with server: " + e.getMessage());
+            // czekanie na odpowiedz broadcast
+            System.out.println("Waiting for broadcast from server");
+            MessageDTO received = (MessageDTO) in.readObject();
+            System.out.println("Client received: " + received);
+
+            // czekanie na druga odpowiedz (z drugiego klienta, dla testu)
+            MessageDTO received2 = (MessageDTO) in.readObject();
+            System.out.println("Client received: " + received2);
+
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Error: " + e.getMessage());
         }
     }
 }

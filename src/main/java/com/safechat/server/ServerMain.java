@@ -15,6 +15,7 @@ public class ServerMain {
     public static void main(String[] args) {
         System.out.println("Starting server");
 
+        ConnectionManager connectionManager = new ConnectionManager();
         // block try z nawiasami
         // Java sama zamknie gniazdo serwera na koniec
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -27,22 +28,10 @@ public class ServerMain {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("New client, IP: " + clientSocket.getInetAddress());
 
-                // obiekt do odbierania obiektow od klienta
-                ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream());
-
-                // metoda readObject() zatrzyma program dopoki klient czegos nie wysle
-                try {
-                    MessageDTO receivedMessage = (MessageDTO) in.readObject();
-
-                    // wypisujemy co przyszlo
-                    System.out.println("Server caught: " + receivedMessage.toString());
-
-                } catch (ClassNotFoundException e) {
-                    System.err.println("Error, wrong format: " + e.getMessage());
-                }
-
-                // zamykamy gniazdo po jednej wiadomości, zmienimy to pozneij
-                clientSocket.close();
+                // tworzymy nowy watek dla tego klienta
+                ClientHandler handler = new ClientHandler(clientSocket, connectionManager);
+                Thread thread = new Thread(handler);
+                thread.start(); // run() w tle
             }
 
         } catch (IOException e) {
