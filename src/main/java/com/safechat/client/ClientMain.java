@@ -5,23 +5,60 @@ import com.safechat.shared.MessageDTO;
 import java.io.*;
 import java.net.Socket;
 import java.util.Random;
+import java.util.Scanner;
 
 public class ClientMain {
     public static void main(String[] args) {
-        System.out.println("Starting new client");
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("=== SafeChat Client Starter ===");
 
-        // probujemy polaczyc sie z serwerem na porcie 5000
-        // localhost, bo serwer znajduje sie na tym samym komputerze co klient
-        try (Socket socket = new Socket("localhost", 5000)) {
+        System.out.print("Podaj IP serwera [default: localhost]: ");
+        String host = scanner.nextLine().trim();
+        if (host.isEmpty()) host = "localhost";
+
+        // dynamiczne pobieranie Portu
+        int port = 5000;
+        boolean portOk = false;
+        while (!portOk) {
+            System.out.print("Podaj port [1-65535, default: 5000]: ");
+            String portInput = scanner.nextLine().trim();
+            // powtarzamy do skutku az port bedzie prawidlowy
+            if (portInput.isEmpty()) {
+                portOk = true;
+            } else {
+                try {
+                    port = Integer.parseInt(portInput);
+                    if (port >= 1 && port <= 65535) {
+                        portOk = true;
+                    } else {
+                        System.out.println("Blad: Port poza zakresem");
+                    }
+                } catch (NumberFormatException e) {
+                    System.out.println("Blad: Zly format portu");
+                }
+            }
+        }
+
+        // dynamicznie pobiera nick, aby nie byl losowy
+        String nick = "";
+        while (nick.isEmpty()) {
+            System.out.print("Podaj nick: ");
+            nick = scanner.nextLine().trim();
+            if (nick.isEmpty()) {
+                System.out.println("Blad: Nick jest pusty");
+            }
+        }
+
+        System.out.println("Laczenie z " + host + ":" + port + " jako " + nick + "...");
+
+        // dla ustawionego hosta i portu zalacza sie socket
+        try (Socket socket = new Socket(host , port)) {
             System.out.println("Established connection with server");
 
             // inicjalizacja strumieni
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
 
-            // randomizacja nicku dla latwiejszego testowania
-            Random rand = new Random();
-            String nick = "Nick" + rand.nextInt(50);
             // wiadomosc automatyczna powitalna
             MessageDTO message = new MessageDTO(MessageDTO.MessageType.JOIN, nick, "ALL", "Hello world");
             out.writeObject(message);

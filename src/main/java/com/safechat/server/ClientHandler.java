@@ -12,6 +12,7 @@ public class ClientHandler implements Runnable {
     private final ConnectionManager connectionManager;
     private ObjectInputStream in;
     private ObjectOutputStream out;
+    private String clientNick;
 
     // konstruktor przyjmuje gniazdo oraz referencję do ConnectionManager
     public ClientHandler(Socket socket, ConnectionManager connectionManager) {
@@ -25,24 +26,43 @@ public class ClientHandler implements Runnable {
             out = new ObjectOutputStream(socket.getOutputStream());
             in = new ObjectInputStream(socket.getInputStream());
 
-            // rejestrtujemy klienta
-            connectionManager.addClient(this);
-
             // nieskonczona petla, czekanie na wiadomosci
             while (true) {
                 MessageDTO message = (MessageDTO) in.readObject();
                 System.out.println("Server received: " + message);
 
-                // narazie wysylamy do wszystkich
-                connectionManager.broadcast(message);
+                // Weryfikujemy nick po dolaczeniu nowego uzytkownika 
+                if (message.getType() == MessageDTO.MessageType.JOIN) {
+                    String wantedNick = message.getSender();
+                    
+                    // Proba rejestracji
+                    boolean isRegistered = connectionManager.registerClient(wantedNick, this);
+
+                    if (!isRegistered) {
+                        // gdy nick zajety odrzucamy zapytanie
+                        MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.CHAT, "Serwer", wantedNick, "BŁĄD: Nick '" + wantedNick + "' jest już zajęty! Uruchom klienta ponownie.");
+                        sendMessage(errorMsg);
+                        closeEverything();
+                        return;
+                    }
+
+                    // nick wolny, rozsyla powitanie
+                    this.clientNick = wantedNick;
+                    connectionManager.broadcast(message);
+                    
+                } else {
+                    connectionManager.broadcast(message);
+                }
             }
         } catch (java.io.EOFException e) {
             System.out.println("Client disconnected");
         } catch (IOException | ClassNotFoundException e) {
             System.err.println("Error: " + e.getMessage());
         } finally {
-            // sprzatanie
-            connectionManager.removeClient(this);
+            // usuwamy klienta podajac jego nick
+            if (this.clientNick != null) {
+                connectionManager.removeClient(this.clientNick);
+            }
             closeEverything();
         }
     }
