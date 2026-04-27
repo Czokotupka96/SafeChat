@@ -84,6 +84,26 @@ public class ClientMain {
             out.writeObject(message);
             out.flush();
 
+            boolean nickValid = false;
+            while (!nickValid) {
+                MessageDTO response = (MessageDTO) in.readObject();
+                if (response.getType() == MessageDTO.MessageType.NICK_ERROR) {
+                    System.out.println(response.getContent());
+                    System.out.print("Enter different nickname: ");
+                    nick = scanner.nextLine().trim();
+                    while (nick.isEmpty()) {
+                        System.out.println("Error: Nickname cannot be empty");
+                        System.out.print("Enter nickname: ");
+                        nick = scanner.nextLine().trim();
+                    }
+                    MessageDTO newJoin = new MessageDTO(MessageDTO.MessageType.JOIN, nick, "ALL", "Hello World");
+                    out.writeObject(newJoin);
+                    out.flush();
+                } else if (response.getType() == MessageDTO.MessageType.JOIN_OK) {
+                    nickValid = true;
+                }
+            }
+
             // nasluchiwanie wiadomosci w nieskonczonej petli
             Thread listenerThread = new Thread(() -> {
                 try {
@@ -165,7 +185,7 @@ public class ClientMain {
             // zamykanie socekt
             socket.close();
 
-        } catch (IOException e) {
+        } catch (IOException | ClassNotFoundException e) {
             System.err.println("Error: " + e.getMessage());
         }
     }

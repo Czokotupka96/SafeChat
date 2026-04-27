@@ -40,11 +40,13 @@ public class ClientHandler implements Runnable {
 
                     if (!isRegistered) {
                         // gdy nick zajety odrzucamy zapytanie
-                        MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.CHAT, "Serwer", wantedNick, "BŁĄD: Nick '" + wantedNick + "' jest już zajęty! Uruchom klienta ponownie.");
+                        MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.NICK_ERROR, "Server", wantedNick, "Error: Nick '" + wantedNick + "' is already used");
                         sendMessage(errorMsg);
-                        closeEverything();
-                        return;
+                        continue;
                     }
+
+                    MessageDTO okMsg = new MessageDTO(MessageDTO.MessageType.JOIN_OK, "Server", wantedNick, "OK");
+                    sendMessage(okMsg);
 
                     // nick wolny, rozsyla powitanie
                     this.clientNick = wantedNick;
