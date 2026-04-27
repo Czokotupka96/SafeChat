@@ -17,7 +17,7 @@ public class ServerMain {
         boolean portOk = false;
 
         while (!portOk) {
-            System.out.print("Wybierz port serwera [1-65535, default: 5000]: ");
+            System.out.print("Select server port [1-65535, default: 5000]: ");
             String input = scanner.nextLine().trim();
             
             if (input.isEmpty()) {
@@ -28,10 +28,10 @@ public class ServerMain {
                     if (port >= 1 && port <= 65535) {
                         portOk = true;
                     } else {
-                        System.out.println("Blad: Port poza zakresem");
+                        System.out.println("Error: Port out of range");
                     }
                 } catch (NumberFormatException e) {
-                    System.out.println("Blad: Zly format portu");
+                    System.out.println("Error: Invalid port format");
                 }
             }
         }

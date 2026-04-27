@@ -24,7 +24,7 @@ public class ConnectionManager {
     public synchronized void removeClient(String nick) {
         if (nick != null) {
             activeClients.remove(nick);
-            System.out.println("[MANAGER] Client disconnected, number of active clients: " + activeClients.size());
+            System.out.println("[SERVER] Client disconnected, number of active clients: " + activeClients.size());
         }
     }
 

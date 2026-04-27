@@ -11,7 +11,7 @@ public class ClientMain {
         Scanner scanner = new Scanner(System.in);
         System.out.println("=== SafeChat Client Starter ===");
 
-        System.out.print("Podaj IP serwera [default: localhost]: ");
+        System.out.print("Enter server IP [default: localhost]: ");
         String host = scanner.nextLine().trim();
         if (host.isEmpty()) host = "localhost";
 
@@ -19,7 +19,7 @@ public class ClientMain {
         int port = 5000;
         boolean portOk = false;
         while (!portOk) {
-            System.out.print("Podaj port [1-65535, default: 5000]: ");
+            System.out.print("Enter port [1-65535, default: 5000]: ");
             String portInput = scanner.nextLine().trim();
             // powtarzamy do skutku az port bedzie prawidlowy
             if (portInput.isEmpty()) {
@@ -30,10 +30,10 @@ public class ClientMain {
                     if (port >= 1 && port <= 65535) {
                         portOk = true;
                     } else {
-                        System.out.println("Blad: Port poza zakresem");
+                        System.out.println("Error: Port out of range");
                     }
                 } catch (NumberFormatException e) {
-                    System.out.println("Blad: Zly format portu");
+                    System.out.println("Error: Invalid port format");
                 }
             }
         }
@@ -41,14 +41,14 @@ public class ClientMain {
         // dynamicznie pobiera nick, aby nie byl losowy
         String nick = "";
         while (nick.isEmpty()) {
-            System.out.print("Podaj nick: ");
+            System.out.print("Enter nickname: ");
             nick = scanner.nextLine().trim();
             if (nick.isEmpty()) {
-                System.out.println("Blad: Nick jest pusty");
+                System.out.println("Error: Nickname cannot be empty");
             }
         }
 
-        System.out.println("Laczenie z " + host + ":" + port + " jako " + nick + "...");
+        System.out.println("Connecting to " + host + ":" + port + " as " + nick + "...");
 
         // dla ustawionego hosta i portu zalacza sie socket
         try (Socket socket = new Socket(host , port)) {
