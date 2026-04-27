@@ -3,7 +3,9 @@ package com.safechat.client;
 import com.safechat.shared.MessageDTO;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.Scanner;
 
 public class ClientMain {
@@ -11,9 +13,26 @@ public class ClientMain {
         Scanner scanner = new Scanner(System.in);
         System.out.println("=== SafeChat Client Starter ===");
 
-        System.out.print("Enter server IP [default: localhost]: ");
-        String host = scanner.nextLine().trim();
-        if (host.isEmpty()) host = "localhost";
+        String host = "";
+        boolean hostOk = false;
+
+        while (!hostOk){
+            System.out.print("Enter serwer IP [default: localhost]: ");
+            host = scanner.nextLine().trim();
+
+            if (host.isEmpty()) {
+                host = "localhost";
+                hostOk = true;
+            } else {
+                try {
+                    // sprawdzenie poprawnosci ip
+                    InetAddress.getByName(host);
+                    hostOk = true;
+                } catch (UnknownHostException e){
+                    System.out.println("Error: Invalid IP address or unknown host");
+                }
+            }
+        }
 
         // dynamiczne pobieranie Portu
         int port = 5000;
