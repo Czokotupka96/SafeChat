@@ -7,7 +7,7 @@ public class MessageDTO implements Serializable {
 
     // typy wiadomosci
     public enum MessageType {
-        CHAT, JOIN, LEAVE
+        CHAT, JOIN, LEAVE, SWITCH_REQUEST, SWITCH_OK, SWITCH_ERROR
     }
     // deklarowanie numer wersji
     private static final long serialVersionUID = 1L;

@@ -9,6 +9,8 @@ import java.net.UnknownHostException;
 import java.util.Scanner;
 
 public class ClientMain {
+    private static volatile String currentRecipient = "ALL";
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         System.out.println("=== SafeChat Client Starter ===");
@@ -78,7 +80,7 @@ public class ClientMain {
             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
 
             // wiadomosc automatyczna powitalna
-            MessageDTO message = new MessageDTO(MessageDTO.MessageType.JOIN, nick, "ALL", "Hello world");
+            MessageDTO message = new MessageDTO(MessageDTO.MessageType.JOIN, nick, "ALL", "Hello World");
             out.writeObject(message);
             out.flush();
 
@@ -87,7 +89,17 @@ public class ClientMain {
                 try {
                     while (true) {
                         MessageDTO receivedMessage = (MessageDTO) in.readObject();
-                        System.out.println(receivedMessage.toString());
+                        
+                        // Odbieranie odpowiedzi na probe polaczenia
+                        if (receivedMessage.getType() == MessageDTO.MessageType.SWITCH_OK) {
+                            currentRecipient = receivedMessage.getContent();
+                            System.out.println("--> Switched to private chat with " + currentRecipient);
+                        } else if (receivedMessage.getType() == MessageDTO.MessageType.SWITCH_ERROR) {
+                            System.out.println("Error: " + receivedMessage.getContent());
+                        } else {
+                            // Normalna wiadomosc CHAT, JOIN, LEAVE
+                            System.out.println(receivedMessage.toString());
+                        }
                     }
                 } catch (IOException | ClassNotFoundException e) {
                     System.out.println("Disconnected from server");
@@ -99,14 +111,53 @@ public class ClientMain {
             // wysylanie wiadmosci z klawiatury
             BufferedReader consoleReader = new BufferedReader(new InputStreamReader(System.in));
             System.out.println("Write on your keyboard (write 'exit' to quit):");
+            System.out.println("Write @nickname for private message");
+            System.out.println("Write @ALL for broadcast message");
+            
             String userInput;
 
             while ((userInput = consoleReader.readLine()) != null) {
                 if (userInput.equalsIgnoreCase("exit")) {
                     break;
                 }
-                // wysylanie nowej wiadomosci
-                MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, nick, "ALL", userInput);
+
+                // sprawdzenie czy nadaje adresata
+                if (userInput.startsWith("@")) {
+                    // jesli jest w formacie ze spacja tzn "@nickame message" to traktuje jako jednorazowa szybka wiadomosc
+                    if (userInput.contains(" ")) {
+                        int firstSpaceIndex = userInput.indexOf(" ");
+                        String tempRecipient = userInput.substring(1, firstSpaceIndex);
+                        String content = userInput.substring(firstSpaceIndex + 1);
+
+                        MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, nick, tempRecipient, content);
+                        out.writeObject(chatMessage);
+                        out.flush();
+                        continue;
+                    } // gdy nie ma wiadomosci a jedynie samo @nickname
+                    else {
+                        // zmiana odbiorcy
+                        String target = userInput.substring(1).trim();
+
+                        if (target.isEmpty()) {
+                            System.out.println("Error: Invalid nickname");
+                            continue;
+                        }
+
+                        if (target.equalsIgnoreCase("ALL")) {
+                            currentRecipient = "ALL";
+                            System.out.println("-> Switched to broadcast");
+                            continue;
+                        }
+
+                        // zapytanie do serwera czy uzytkownik istnieje
+                        MessageDTO checkMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_REQUEST, nick, target, target);
+                        out.writeObject(checkMsg);
+                        out.flush();
+                        continue;
+                    }
+                }
+                // wysylanie wiadomosci do aktualnie wybranego odbiorcy
+                MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, nick, currentRecipient, userInput);
                 out.writeObject(chatMessage);
                 out.flush();
             }

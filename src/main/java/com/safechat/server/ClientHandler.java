@@ -50,8 +50,26 @@ public class ClientHandler implements Runnable {
                     this.clientNick = wantedNick;
                     connectionManager.broadcast(message);
                     
+                } else if (message.getType() == MessageDTO.MessageType.SWITCH_REQUEST){
+                    // uzytkownik pyta czy moze przelaczyc
+                    String targetNick = message.getRecipient();
+
+                    if (connectionManager.isClientActive(targetNick)) {
+                        // uzytkownik istnieje
+                        MessageDTO okMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_OK, "Server", clientNick, targetNick);
+                        sendMessage(okMsg);
+                    } else {
+                        // uzytkownik nie istnieje
+                        MessageDTO errMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_ERROR, "Server", clientNick, "User '" + targetNick + "' is not available");
+                        sendMessage(errMsg);
+                    }
                 } else {
-                    connectionManager.broadcast(message);
+                    // rozdzielenie wysylania wiadomosci na ALL lub @nickname
+                    if ("ALL".equals(message.getRecipient())) {
+                        connectionManager.broadcast(message);
+                    } else {
+                        connectionManager.sendPrivateMessage(message);
+                    }
                 }
             }
         } catch (java.io.EOFException e) {
