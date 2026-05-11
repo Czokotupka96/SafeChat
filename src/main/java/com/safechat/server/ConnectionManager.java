@@ -9,6 +9,9 @@ public class ConnectionManager {
     // lista trzymająca wszystkich aktywnych klientow
     private final Map<String, ClientHandler> activeClients = new ConcurrentHashMap<>();
 
+    // przechowywanie kluczy publicznych uzytkownikow
+    private final Map<String, byte[]> publicKeys = new ConcurrentHashMap<>();
+
     // metoda dodajaca klienta, sprawdza czy nick jest unikalny
     public synchronized boolean registerClient(String nick, ClientHandler handler) {
         if (activeClients.containsKey(nick)) {
@@ -18,10 +21,31 @@ public class ConnectionManager {
         return true;
     }
 
+    // zapisywanie klucza publicznego uzytkownika
+    public synchronized void storePublicKey(String nick, byte[] publicKey) {
+        if (publicKey != null) {
+            publicKeys.put(nick, publicKey);
+        }
+    }
+
+    // wysylanie kluczy publicznych istniejacych uzytkownikow do nowo dolaczonego klienta
+    public synchronized void sendExistingUsers(String newNick, ClientHandler newHandler) {
+        for (Map.Entry<String, byte[]> entry : publicKeys.entrySet()) {
+            if (!entry.getKey().equals(newNick)) {
+                MessageDTO joinMsg = new MessageDTO(
+                        MessageDTO.MessageType.JOIN, entry.getKey(), "ALL",
+                        "Hello World", entry.getValue()
+                );
+                newHandler.sendMessage(joinMsg);
+            }
+        }
+    }
+
     // metoda usuwajaca klienta
     public synchronized void removeClient(String nick) {
         if (nick != null) {
             activeClients.remove(nick);
+            publicKeys.remove(nick);
             System.out.println("[SERVER] Client disconnected, number of active clients: " + activeClients.size());
         }
     }
@@ -33,7 +57,6 @@ public class ConnectionManager {
 
     // metoda wysylajaca wiadomosc do wsyzstkich klientow
     public synchronized void broadcast(MessageDTO message) {
-    // Zamiast iterować po starej liście, iterujemy po values() z mapy
         for (ClientHandler client : activeClients.values()) {
             client.sendMessage(message);
         }

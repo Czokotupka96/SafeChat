@@ -14,7 +14,7 @@ public class ClientHandler implements Runnable {
     private ObjectOutputStream out;
     private String clientNick;
 
-    // konstruktor przyjmuje gniazdo oraz referencję do ConnectionManager
+    // konstruktor
     public ClientHandler(Socket socket, ConnectionManager connectionManager) {
         this.socket = socket;
         this.connectionManager = connectionManager;
@@ -26,7 +26,6 @@ public class ClientHandler implements Runnable {
             out = new ObjectOutputStream(socket.getOutputStream());
             in = new ObjectInputStream(socket.getInputStream());
 
-            // nieskonczona petla, czekanie na wiadomosci
             while (true) {
                 MessageDTO message = (MessageDTO) in.readObject();
                 System.out.println("Server received: " + message);
@@ -39,7 +38,7 @@ public class ClientHandler implements Runnable {
                     boolean isRegistered = connectionManager.registerClient(wantedNick, this);
 
                     if (!isRegistered) {
-                        // gdy nick zajety odrzucamy zapytanie
+                        // gdy nick zajety odrzuca probe
                         MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.NICK_ERROR, "Server", wantedNick, "Error: Nick '" + wantedNick + "' is already used");
                         sendMessage(errorMsg);
                         continue;
@@ -48,8 +47,16 @@ public class ClientHandler implements Runnable {
                     MessageDTO okMsg = new MessageDTO(MessageDTO.MessageType.JOIN_OK, "Server", wantedNick, "OK");
                     sendMessage(okMsg);
 
-                    // nick wolny, rozsyla powitanie
+                    // nick wolny, zapisuje klucz publiczny, wysyla powitanie
                     this.clientNick = wantedNick;
+
+                    // zapisanie klucza publicznego nowego uzytkownika na serwerze
+                    connectionManager.storePublicKey(wantedNick, message.getPublicKey());
+
+                    // wysylanie kluczy publicznych istniejacych uzytkownikow do nowego klienta
+                    connectionManager.sendExistingUsers(wantedNick, this);
+
+                    // broadcast JOIN z kluczem publicznym do wszystkich
                     connectionManager.broadcast(message);
                     
                 } else if (message.getType() == MessageDTO.MessageType.SWITCH_REQUEST){
@@ -65,6 +72,9 @@ public class ClientHandler implements Runnable {
                         MessageDTO errMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_ERROR, "Server", clientNick, "User '" + targetNick + "' is not available");
                         sendMessage(errMsg);
                     }
+                } else if (message.getType() == MessageDTO.MessageType.KEY_EXCHANGE) {
+                    // przekazanie wymiany kluczy do odbiorcy, serwer nie widzi wiadomosci
+                    connectionManager.sendPrivateMessage(message);
                 } else {
                     // rozdzielenie wysylania wiadomosci na ALL lub @nickname
                     if ("ALL".equals(message.getRecipient())) {

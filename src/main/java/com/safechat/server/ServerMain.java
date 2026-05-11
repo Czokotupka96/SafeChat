@@ -1,11 +1,8 @@
 package com.safechat.server;
 
-import com.safechat.shared.MessageDTO;
-
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.io.ObjectInputStream;
 import java.util.Scanner;
 
 public class ServerMain {
@@ -40,22 +37,18 @@ public class ServerMain {
 
         ConnectionManager connectionManager = new ConnectionManager();
 
-        // block try z nawiasami
-        // Java sama zamknie gniazdo serwera na koniec
+        // server socket zamknie sie samo na koniec
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("The server is listening on port: " + port);
 
-            // nieskonczona petla, serwer dziala 24/7
             while (true) {
-                // metoda accept() blokuje program w tej linijce
-                // program ruszy dalej dopiero jak klient sie polaczy
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("New client, IP: " + clientSocket.getInetAddress());
 
-                // tworzymy nowy watek dla tego klienta
+                // tworzymy nowy watek dla klienta
                 ClientHandler handler = new ClientHandler(clientSocket, connectionManager);
                 Thread thread = new Thread(handler);
-                thread.start(); // run() w tle
+                thread.start();
             }
 
         } catch (IOException e) {
