@@ -9,15 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Serwis kryptograficzny klienta SafeChat.
- * Odpowiada za generowanie kluczy RSA/AES, szyfrowanie/deszyfrowanie wiadomosci
- * oraz zarzadzanie kluczami publicznymi innych uzytkownikow i kluczami
- * sesyjnymi AES.
- *
- * Model hybrydowy: RSA 2048-bit (wymiana kluczy) + AES 256-bit GCM (szyfrowanie
- * wiadomosci)
- */
+
+// Odpowiada za generowanie kluczy RSA/AES, szyfrowanie/deszyfrowanie wiadomosci oraz zarzadzanie kluczami publicznymi innych uzytkownikow i kluczami sesyjnymi AES.
+// Model hybrydowy: RSA 2048-bit (wymiana kluczy) + AES 256-bit GCM (szyfrowanie wiadomosci)
+
 public class CryptoService {
 
     // stale kryptograficzne 
@@ -104,7 +99,6 @@ public class CryptoService {
 
 
     // Sprawdza czy mamy klucz AES dla konwersacji z danym uzytkownikiem.
-
     public boolean hasAesKey(String nick) {
         return aesKeyStore.containsKey(nick);
     }
