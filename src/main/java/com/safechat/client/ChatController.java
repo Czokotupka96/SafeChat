@@ -19,10 +19,12 @@ public class ChatController {
 
     private NetworkService networkService;
     private String currentRecipient = "ALL";
+    private final java.util.Map<String, StringBuilder> messageHistoryMap = new java.util.HashMap<>();
 
     @FXML
     public void initialize() {
         // inicjalizacja listy z ALL na samej gorze
+        messageHistoryMap.put("ALL", new StringBuilder());
         usersList.getItems().add("ALL");
 
         // po kliknieciu na osobe z listy zmieniamy tryb na czat prywatny
@@ -30,10 +32,14 @@ public class ChatController {
             if (newVal != null) {
                 currentRecipient = newVal;
                 if (currentRecipient.equals("ALL")) {
-                    currentChatLabel.setText("Czat ogólny (ALL)");
+                    currentChatLabel.setText("General chat (ALL)");
                 } else {
-                    currentChatLabel.setText("Czat prywatny z: " + currentRecipient);
+                    currentChatLabel.setText("Private chat with: " + currentRecipient);
                 }
+                // Podmieniamy tekst w oknie na historie wybranego pokoju
+                String history = messageHistoryMap.getOrDefault(currentRecipient, new StringBuilder()).toString();
+                chatHistory.setText(history);
+                chatHistory.setScrollTop(Double.MAX_VALUE);
             }
         });
 
@@ -67,7 +73,10 @@ public class ChatController {
                     loginPanel.setVisible(false);
                     chatPanel.setVisible(true);
                     loggedInUserLabel.setText("Logged in as: " + nick);
-                    chatHistory.appendText("System: Successfully connected as " + nick + "!\n");
+
+                    String sysMsg = "System: Connected successfully as " + nick + "!\n";
+                    messageHistoryMap.get("ALL").append(sysMsg); // Zapisz w historii ALL
+                    chatHistory.appendText(sysMsg); // wyswietlanie bo startujemy w ALL
                 } else {
                     errorLabel.setText("Unable to connect or invalid username.");
                 }
@@ -100,9 +109,22 @@ public class ChatController {
                 }
             }
 
-            // Wypisywanie wiadomosci w oknie
+            // Ustalamy do jakiego pokoju (klucza w mapie) nalezy wiadomosc
+            String roomKey = "ALL";
+            if (!"ALL".equals(message.getRecipient())) {
+                String myNick = networkService.getClientNick();
+                roomKey = message.getSender().equals(myNick) ? message.getRecipient() : message.getSender();
+            }
+
+            // formatujemy i zapisujemy do mapy
             String formattedMsg = String.format("[%s -> %s]: %s\n", message.getSender(), message.getRecipient(), message.getContent());
-            chatHistory.appendText(formattedMsg);
+            messageHistoryMap.putIfAbsent(roomKey, new StringBuilder());
+            messageHistoryMap.get(roomKey).append(formattedMsg);
+
+            // jesli pokoj jest otwarty to dopisujemy do TextArea
+            if (roomKey.equals(currentRecipient)) {
+                chatHistory.appendText(formattedMsg);
+            }
         });
     }
 
