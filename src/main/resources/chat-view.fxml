@@ -16,6 +16,14 @@
     </VBox>
 
     <BorderPane fx:id="chatPanel" visible="false">
+
+        <top>
+            <HBox alignment="CENTER_RIGHT">
+                <padding><Insets top="10" right="15" bottom="0" left="10"/></padding>
+                <Label fx:id="loggedInUserLabel" text="Logged in as: " style="-fx-font-style: italic; -fx-text-fill: gray;"/>
+            </HBox>
+        </top>
+
         <left>
             <VBox spacing="5">
                 <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>

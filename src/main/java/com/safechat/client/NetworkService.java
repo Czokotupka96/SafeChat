@@ -55,11 +55,23 @@ public class NetworkService {
                 disconnect();
                 return false;
             }
-        } catch (Exception e) {
-            onConnectionError.accept("Connection error: " + e.getMessage());
+        }  catch (java.net.ConnectException e) {
+            onConnectionError.accept("Server is offline or unreachable.");
             disconnect();
             return false;
-        }
+        } catch (java.net.UnknownHostException e) {
+            onConnectionError.accept("Invalid IP address or unknown host.");
+            disconnect();
+            return false;
+        } catch (IllegalArgumentException e) {
+            onConnectionError.accept("Port number out of range (1-65535).");
+            disconnect();
+            return false;
+        } catch (Exception e) {
+            onConnectionError.accept("Unexpected error: " + e.getMessage());
+            disconnect();
+            return false;
+    }
     }
 
 

@@ -13,7 +13,7 @@ public class ChatController {
     @FXML private VBox loginPanel;
     @FXML private BorderPane chatPanel;
     @FXML private TextField hostField, portField, nickField, messageField;
-    @FXML private Label errorLabel, currentChatLabel;
+    @FXML private Label errorLabel, currentChatLabel, loggedInUserLabel;
     @FXML private TextArea chatHistory;
     @FXML private ListView<String> usersList;
 
@@ -63,9 +63,10 @@ public class ChatController {
             boolean success = networkService.connect(host, port, nick);
             Platform.runLater(() -> {
                 if (success) {
-                    // Przełączamy widoki!
+                    // przelaczamy widoki
                     loginPanel.setVisible(false);
                     chatPanel.setVisible(true);
+                    loggedInUserLabel.setText("Logged in as: " + nick);
                     chatHistory.appendText("System: Successfully connected as " + nick + "!\n");
                 } else {
                     errorLabel.setText("Unable to connect or invalid username.");
@@ -91,10 +92,11 @@ public class ChatController {
     // Odbieranie wiadomosci z serwera
     private void onMessageReceived(MessageDTO message) {
         Platform.runLater(() -> {
-            // Dodawanie nowych osob do bocznej listy
+            // Dodawanie nowych osob do bocznej listy (bez siebie))
             if (message.getType() == MessageDTO.MessageType.JOIN) {
-                if (!usersList.getItems().contains(message.getSender())) {
-                    usersList.getItems().add(message.getSender());
+                String senderNick = message.getSender();
+                if (!senderNick.equals(networkService.getClientNick()) && !usersList.getItems().contains(senderNick)) {
+                    usersList.getItems().add(senderNick);
                 }
             }
 
