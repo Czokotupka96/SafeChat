@@ -34,8 +34,10 @@
         <center>
             <VBox spacing="10">
                 <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
-                <Label fx:id="currentChatLabel" text="General Chat (ALL)" style="-fx-font-weight: bold; -fx-font-size: 14px;" textFill="BLUE"/>
-                <TextArea fx:id="chatHistory" editable="false" wrapText="true" VBox.vgrow="ALWAYS" style="-fx-font-family: 'Consolas';"/>
+                <Label fx:id="currentChatLabel" text="General Chat" style="-fx-font-weight: bold; -fx-font-size: 14px;" textFill="BLUE"/>
+                <ScrollPane fx:id="chatScrollPane" fitToWidth="true" VBox.vgrow="ALWAYS" style="-fx-background: #f9f9f9;">
+                    <VBox fx:id="chatMessagesBox" spacing="6" style="-fx-padding: 10;"/>
+                </ScrollPane>
                 <HBox spacing="10">
                     <TextField fx:id="messageField" promptText="Type a message..." HBox.hgrow="ALWAYS" onAction="#handleSend"/>
                     <Button text="Send" onAction="#handleSend" prefWidth="80"/>

@@ -10,7 +10,6 @@ public class ClientGUI extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
-        // Wczytanie pliku FXML z folderu resources
         FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("/chat-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load(), 800, 600);
 
@@ -27,6 +26,6 @@ public class ClientGUI extends Application {
     }
 
     public static void main(String[] args) {
-        launch(args); // metoda uruchamiajaca okienko
+        launch(args);
     }
 }

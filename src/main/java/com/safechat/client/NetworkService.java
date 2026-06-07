@@ -44,7 +44,7 @@ public class NetworkService {
             out.writeObject(joinMsg);
             out.flush();
 
-            // Czekamy na werdykt serwera (JOIN_OK lub NICK_ERROR)
+            // Czekamy na decyzje serwera (JOIN_OK lub NICK_ERROR)
             MessageDTO response = (MessageDTO) in.readObject();
             if (response.getType() == MessageDTO.MessageType.JOIN_OK) {
                 this.clientNick = nick;

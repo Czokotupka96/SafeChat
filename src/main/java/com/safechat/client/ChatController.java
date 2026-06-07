@@ -5,18 +5,26 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class ChatController {
 
-    // elementy z pliku FXML
+    // Struktura przechowujaca dane wiadomosci
+    private record ChatMessage(String sender, String content, boolean isSystem) {
+    }
+
     @FXML
     private VBox loginPanel;
     @FXML
@@ -26,13 +34,15 @@ public class ChatController {
     @FXML
     private Label errorLabel, currentChatLabel, loggedInUserLabel;
     @FXML
-    private TextArea chatHistory;
+    private ScrollPane chatScrollPane;
+    @FXML
+    private VBox chatMessagesBox;
     @FXML
     private ListView<String> usersList;
 
     private NetworkService networkService;
     private String currentRecipient = "ALL";
-    private final Map<String, StringBuilder> messageHistoryMap = new HashMap<>();
+    private final Map<String, List<ChatMessage>> messageHistoryMap = new HashMap<>();
 
     // Czas ostatniej wiadomosci (do sortowania listy)
     private final Map<String, Long> lastMessageTime = new HashMap<>();
@@ -42,7 +52,7 @@ public class ChatController {
     @FXML
     public void initialize() {
         // inicjalizacja listy z ALL na samej gorze
-        messageHistoryMap.put("ALL", new StringBuilder());
+        messageHistoryMap.put("ALL", new ArrayList<>());
         lastMessageTime.put("ALL", System.currentTimeMillis());
         usersList.getItems().add("ALL");
 
@@ -79,14 +89,12 @@ public class ChatController {
                 currentChatLabel.setText("Private chat with: " + currentRecipient);
             }
 
-            // Oznacz jako przeczytane i odswież listę
+            // Oznacz jako przeczytane i odswiez liste
             unreadChats.remove(newVal);
             usersList.refresh();
 
-            // Podmieniamy tekst w oknie na historie wybranego pokoju
-            String history = messageHistoryMap.getOrDefault(currentRecipient, new StringBuilder()).toString();
-            chatHistory.setText(history);
-            chatHistory.setScrollTop(Double.MAX_VALUE);
+            // Odswiezamy widok czatu
+            refreshChatDisplay();
         });
 
         networkService = new NetworkService(
@@ -118,9 +126,9 @@ public class ChatController {
                     chatPanel.setVisible(true);
                     loggedInUserLabel.setText("Logged in as: " + nick);
 
-                    String sysMsg = "System: Connected successfully as " + nick + "!\n";
-                    messageHistoryMap.get("ALL").append(sysMsg); // Zapisz w historii ALL
-                    chatHistory.appendText(sysMsg); // wyswietlanie bo startujemy w ALL
+                    // Systemowy komunikat o polaczeniu
+                    addMessage("ALL", new ChatMessage("System", "Connected successfully as " + nick + "!", true));
+                    refreshChatDisplay();
                 } else {
                     errorLabel.setText("Unable to connect or invalid username.");
                 }
@@ -151,21 +159,19 @@ public class ChatController {
                 String senderNick = message.getSender();
                 if (!senderNick.equals(networkService.getClientNick()) && !usersList.getItems().contains(senderNick)) {
                     usersList.getItems().add(senderNick);
-                    lastMessageTime.put(senderNick, 0L); // nowy user - brak wiadomosci
+                    lastMessageTime.put(senderNick, 0L);
                 }
 
                 // Komunikat o dolaczeniu widoczny dla wszystkich w czacie ALL
-                String joinNotice = formatCenteredNotice(senderNick + " joined chat");
-                messageHistoryMap.get("ALL").append(joinNotice);
+                addMessage("ALL", new ChatMessage(senderNick, senderNick + " joined chat", true));
 
                 // Aktualizujemy czas dla ALL i sortujemy
                 lastMessageTime.put("ALL", System.currentTimeMillis());
                 sortUsersList();
 
                 if ("ALL".equals(currentRecipient)) {
-                    chatHistory.appendText(joinNotice);
+                    refreshChatDisplay();
                 } else {
-                    // Powiadomienie o nowej wiadomosci na ALL
                     unreadChats.add("ALL");
                     usersList.refresh();
                 }
@@ -179,10 +185,8 @@ public class ChatController {
                 roomKey = message.getSender().equals(myNick) ? message.getRecipient() : message.getSender();
             }
 
-            // formatujemy i zapisujemy do mapy
-            String formattedMsg = String.format("[%s] %s\n", message.getSender(), message.getContent());
-            messageHistoryMap.putIfAbsent(roomKey, new StringBuilder());
-            messageHistoryMap.get(roomKey).append(formattedMsg);
+            // Zapisujemy wiadomosc do historii
+            addMessage(roomKey, new ChatMessage(message.getSender(), message.getContent(), false));
 
             // Aktualizujemy czas ostatniej wiadomosci i sortujemy liste
             lastMessageTime.put(roomKey, System.currentTimeMillis());
@@ -190,18 +194,71 @@ public class ChatController {
 
             // Odswiezamy widok czatu jesli aktualnie otwarty pokoj dostal wiadomosc
             if (roomKey.equals(currentRecipient)) {
-                chatHistory.setText(messageHistoryMap.get(roomKey).toString());
-                chatHistory.setScrollTop(Double.MAX_VALUE);
+                refreshChatDisplay();
             } else {
-                // Pokoj nie jest otwarty - oznacz jako nieprzeczytany
                 unreadChats.add(roomKey);
                 usersList.refresh();
             }
         });
     }
 
+    // Dodaje wiadomosc do historii danego pokoju
+    private void addMessage(String roomKey, ChatMessage msg) {
+        messageHistoryMap.computeIfAbsent(roomKey, k -> new ArrayList<>()).add(msg);
+    }
+
+    // Odswiezenie widoku czatu - buduje wezly z odpowiednim wyrownaniem
+    private void refreshChatDisplay() {
+        chatMessagesBox.getChildren().clear();
+        List<ChatMessage> messages = messageHistoryMap.getOrDefault(currentRecipient, new ArrayList<>());
+        for (ChatMessage msg : messages) {
+            chatMessagesBox.getChildren().add(createMessageNode(msg));
+        }
+        // Auto-scroll na dol
+        Platform.runLater(() -> chatScrollPane.setVvalue(1.0));
+    }
+
+    // Tworzy wezel wiadomosci z odpowiednim wyrownaniem i stylem
+    private Node createMessageNode(ChatMessage msg) {
+        String myNick = networkService != null ? networkService.getClientNick() : "";
+
+        HBox container = new HBox();
+        container.setMaxWidth(Double.MAX_VALUE);
+
+        Label label = new Label();
+        label.setWrapText(true);
+        label.setMaxWidth(350);
+
+        if (msg.isSystem()) {
+            // Wiadomosc systemowa - wycentrowana, szara kursywa
+            label.setText(msg.content());
+            label.setStyle("-fx-padding: 4 10; -fx-text-fill: #888888; -fx-font-style: italic; "
+                    + "-fx-font-family: 'Consolas';");
+            container.setAlignment(Pos.CENTER);
+        } else if (msg.sender().equals(myNick)) {
+            // Wlasna wiadomosc - prawa strona
+            label.setText(msg.content());
+            label.setStyle("-fx-padding: 6 12; -fx-background-color: #e8f4dfff; "
+                    + "-fx-background-radius: 12 12 0 12; -fx-font-family: 'Consolas';");
+            container.setAlignment(Pos.CENTER_RIGHT);
+        } else {
+            // Cudza wiadomosc - lewa strona
+            if ("ALL".equals(currentRecipient)) { // ALL - z prefixem
+                label.setText("[" + msg.sender() + "] " + msg.content());
+            } else { // prywatny - bez prefixu
+                label.setText(msg.content());
+            }
+            label.setStyle("-fx-padding: 6 12; -fx-background-color: rgb(245, 232, 232); "
+                    + "-fx-background-radius: 12 12 12 0; -fx-font-family: 'Consolas'; "
+                    + "-fx-border-color: #e0e0e0; -fx-border-radius: 12 12 12 0;");
+            container.setAlignment(Pos.CENTER_LEFT);
+        }
+
+        container.getChildren().add(label);
+        return container;
+    }
+
     // Sortuje liste uzytkownikow wg czasu ostatniej wiadomosci (najnowsza na gorze)
-    // Zachowuje aktualnie wybrany element
     private void sortUsersList() {
         ObservableList<String> items = usersList.getItems();
         FXCollections.sort(items, (a, b) -> {
@@ -214,17 +271,8 @@ public class ChatController {
     private void onConnectionError(String errorMessage) {
         Platform.runLater(() -> {
             errorLabel.setText(errorMessage);
-            chatHistory.appendText("ERROR: " + errorMessage + "\n");
+            addMessage(currentRecipient, new ChatMessage("System", "ERROR: " + errorMessage, true));
+            refreshChatDisplay();
         });
-    }
-
-    // Formatuje tekst jako wycentrowany komunikat otoczony myslnikami
-    private String formatCenteredNotice(String text) {
-        int totalWidth = 50;
-        String padded = " " + text + " ";
-        int dashCount = Math.max(0, totalWidth - padded.length());
-        int leftDashes = dashCount / 2;
-        int rightDashes = dashCount - leftDashes;
-        return "-".repeat(leftDashes) + padded + "-".repeat(rightDashes) + "\n";
     }
 }
