@@ -2,10 +2,17 @@ package com.safechat.client;
 
 import com.safechat.shared.MessageDTO;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class ChatController {
 
@@ -25,28 +32,61 @@ public class ChatController {
 
     private NetworkService networkService;
     private String currentRecipient = "ALL";
-    private final java.util.Map<String, StringBuilder> messageHistoryMap = new java.util.HashMap<>();
+    private final Map<String, StringBuilder> messageHistoryMap = new HashMap<>();
+
+    // Czas ostatniej wiadomosci (do sortowania listy)
+    private final Map<String, Long> lastMessageTime = new HashMap<>();
+    // Zestaw czatow z nieprzeczytanymi wiadomosciami
+    private final Set<String> unreadChats = new HashSet<>();
 
     @FXML
     public void initialize() {
         // inicjalizacja listy z ALL na samej gorze
         messageHistoryMap.put("ALL", new StringBuilder());
+        lastMessageTime.put("ALL", System.currentTimeMillis());
         usersList.getItems().add("ALL");
+
+        // Custom cell factory - wyrozniajace obramowanie dla nieprzeczytanych
+        usersList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item);
+                    if (unreadChats.contains(item)) {
+                        setStyle("-fx-border-color: #5abc7cff; -fx-border-width: 2; "
+                                + "-fx-border-radius: 4; -fx-background-color: #baebb3ff; "
+                                + "-fx-font-weight: bold;");
+                    } else {
+                        setStyle("");
+                    }
+                }
+            }
+        });
 
         // po kliknieciu na osobe z listy zmieniamy tryb na czat prywatny
         usersList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null) {
-                currentRecipient = newVal;
-                if (currentRecipient.equals("ALL")) {
-                    currentChatLabel.setText("General chat (ALL)");
-                } else {
-                    currentChatLabel.setText("Private chat with: " + currentRecipient);
-                }
-                // Podmieniamy tekst w oknie na historie wybranego pokoju
-                String history = messageHistoryMap.getOrDefault(currentRecipient, new StringBuilder()).toString();
-                chatHistory.setText(history);
-                chatHistory.setScrollTop(Double.MAX_VALUE);
+            if (newVal == null)
+                return;
+
+            currentRecipient = newVal;
+            if (currentRecipient.equals("ALL")) {
+                currentChatLabel.setText("General chat (ALL)");
+            } else {
+                currentChatLabel.setText("Private chat with: " + currentRecipient);
             }
+
+            // Oznacz jako przeczytane i odswież listę
+            unreadChats.remove(newVal);
+            usersList.refresh();
+
+            // Podmieniamy tekst w oknie na historie wybranego pokoju
+            String history = messageHistoryMap.getOrDefault(currentRecipient, new StringBuilder()).toString();
+            chatHistory.setText(history);
+            chatHistory.setScrollTop(Double.MAX_VALUE);
         });
 
         networkService = new NetworkService(
@@ -111,13 +151,23 @@ public class ChatController {
                 String senderNick = message.getSender();
                 if (!senderNick.equals(networkService.getClientNick()) && !usersList.getItems().contains(senderNick)) {
                     usersList.getItems().add(senderNick);
+                    lastMessageTime.put(senderNick, 0L); // nowy user - brak wiadomosci
                 }
 
                 // Komunikat o dolaczeniu widoczny dla wszystkich w czacie ALL
                 String joinNotice = formatCenteredNotice(senderNick + " joined chat");
                 messageHistoryMap.get("ALL").append(joinNotice);
+
+                // Aktualizujemy czas dla ALL i sortujemy
+                lastMessageTime.put("ALL", System.currentTimeMillis());
+                sortUsersList();
+
                 if ("ALL".equals(currentRecipient)) {
                     chatHistory.appendText(joinNotice);
+                } else {
+                    // Powiadomienie o nowej wiadomosci na ALL
+                    unreadChats.add("ALL");
+                    usersList.refresh();
                 }
                 return;
             }
@@ -134,10 +184,30 @@ public class ChatController {
             messageHistoryMap.putIfAbsent(roomKey, new StringBuilder());
             messageHistoryMap.get(roomKey).append(formattedMsg);
 
-            // jesli pokoj jest otwarty to dopisujemy do TextArea
+            // Aktualizujemy czas ostatniej wiadomosci i sortujemy liste
+            lastMessageTime.put(roomKey, System.currentTimeMillis());
+            sortUsersList();
+
+            // Odswiezamy widok czatu jesli aktualnie otwarty pokoj dostal wiadomosc
             if (roomKey.equals(currentRecipient)) {
-                chatHistory.appendText(formattedMsg);
+                chatHistory.setText(messageHistoryMap.get(roomKey).toString());
+                chatHistory.setScrollTop(Double.MAX_VALUE);
+            } else {
+                // Pokoj nie jest otwarty - oznacz jako nieprzeczytany
+                unreadChats.add(roomKey);
+                usersList.refresh();
             }
+        });
+    }
+
+    // Sortuje liste uzytkownikow wg czasu ostatniej wiadomosci (najnowsza na gorze)
+    // Zachowuje aktualnie wybrany element
+    private void sortUsersList() {
+        ObservableList<String> items = usersList.getItems();
+        FXCollections.sort(items, (a, b) -> {
+            long timeA = lastMessageTime.getOrDefault(a, 0L);
+            long timeB = lastMessageTime.getOrDefault(b, 0L);
+            return Long.compare(timeB, timeA); // malejaco - najnowsza na gorze
         });
     }
 

@@ -146,11 +146,6 @@ public class NetworkService {
             out.writeObject(chatMessage);
             out.flush();
 
-            // recznie tworzymy odszyfrowana kopie dla naszego GUI, zebysmy widzieli co
-            // wyslalismy
-            MessageDTO localCopy = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick, plainText);
-            onMessageReceived.accept(localCopy);
-
         } catch (Exception e) {
             onConnectionError.accept("Encryption error: " + e.getMessage());
         }
@@ -174,7 +169,6 @@ public class NetworkService {
 
                 if (aesKey != null) {
                     String decryptedText = cryptoService.decryptMessage(message.getEncryptedPayload(), aesKey);
-                    // Tworzymy nowa wiadomosc z odczytanym tekstem dla GUI
                     MessageDTO decryptedMessage = new MessageDTO(MessageDTO.MessageType.CHAT, sender,
                             message.getRecipient(), decryptedText);
                     onMessageReceived.accept(decryptedMessage);

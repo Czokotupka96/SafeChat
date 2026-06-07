@@ -28,14 +28,14 @@ public class ConnectionManager {
         }
     }
 
-    // wysylanie kluczy publicznych istniejacych uzytkownikow do nowo dolaczonego klienta
+    // wysylanie kluczy publicznych istniejacych uzytkownikow do nowo dolaczonego
+    // klienta
     public synchronized void sendExistingUsers(String newNick, ClientHandler newHandler) {
         for (Map.Entry<String, byte[]> entry : publicKeys.entrySet()) {
             if (!entry.getKey().equals(newNick)) {
                 MessageDTO joinMsg = new MessageDTO(
                         MessageDTO.MessageType.JOIN, entry.getKey(), "ALL",
-                        "", entry.getValue()
-                );
+                        "", entry.getValue());
                 newHandler.sendMessage(joinMsg);
             }
         }
@@ -71,14 +71,15 @@ public class ConnectionManager {
         if (recipientHandler != null) {
             // wysylanie do odbiorcy
             recipientHandler.sendMessage(message);
-            //wysylanie kopii do nadawcy
+            // wysylanie kopii do nadawcy
             if (senderHandler != null && !recipientNick.equals(message.getSender())) {
                 senderHandler.sendMessage(message);
             }
         } else {
             // odbiorca nie istnieje
             if (senderHandler != null) {
-                MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.CHAT, "Server", message.getSender(), "User " + recipientNick + " is not available");
+                MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.CHAT, "Server", message.getSender(),
+                        "User " + recipientNick + " is not available");
                 senderHandler.sendMessage(errorMsg);
             }
         }
