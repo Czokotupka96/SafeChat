@@ -15,7 +15,7 @@ public class NetworkService {
     private final CryptoService cryptoService;
     private String clientNick;
 
-    // laczenie silnika sieciowego z interfejsem graficznym (GUI)
+    // laczenie silnika sieciowego z GUI
     private final Consumer<MessageDTO> onMessageReceived;
     private final Consumer<String> onConnectionError;
 
@@ -39,7 +39,7 @@ public class NetworkService {
 
             // Automatyczna wiadomosc powitalna z kluczem publicznym RSA
             MessageDTO joinMsg = new MessageDTO(
-                    MessageDTO.MessageType.JOIN, nick, "ALL", "Hello World",
+                    MessageDTO.MessageType.JOIN, nick, "ALL", "",
                     cryptoService.getPublicKeyBytes());
             out.writeObject(joinMsg);
             out.flush();
@@ -55,7 +55,7 @@ public class NetworkService {
                 disconnect();
                 return false;
             }
-        }  catch (java.net.ConnectException e) {
+        } catch (java.net.ConnectException e) {
             onConnectionError.accept("Server is offline or unreachable.");
             disconnect();
             return false;
@@ -71,9 +71,8 @@ public class NetworkService {
             onConnectionError.accept("Unexpected error: " + e.getMessage());
             disconnect();
             return false;
+        }
     }
-    }
-
 
     // thread nasluchujacy - dziala w tle i odbiera wiadomosci
     private void startListening() {
@@ -133,7 +132,8 @@ public class NetworkService {
                 cryptoService.storeAesKey(recipientNick, aesKey);
                 byte[] encryptedAesKey = cryptoService.encryptAesKey(aesKey, recipientNick);
 
-                MessageDTO keyExchangeMsg = new MessageDTO(MessageDTO.MessageType.KEY_EXCHANGE, clientNick, recipientNick, encryptedAesKey);
+                MessageDTO keyExchangeMsg = new MessageDTO(MessageDTO.MessageType.KEY_EXCHANGE, clientNick,
+                        recipientNick, encryptedAesKey);
                 out.writeObject(keyExchangeMsg);
                 out.flush();
             }
@@ -141,11 +141,13 @@ public class NetworkService {
             SecretKey aesKey = cryptoService.getAesKey(recipientNick);
             byte[] encryptedContent = cryptoService.encryptMessage(plainText, aesKey);
 
-            MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick, encryptedContent);
+            MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick,
+                    encryptedContent);
             out.writeObject(chatMessage);
             out.flush();
 
-            // recznie tworzymy odszyfrowana kopie dla naszego GUI, zebysmy widzieli co wyslalismy
+            // recznie tworzymy odszyfrowana kopie dla naszego GUI, zebysmy widzieli co
+            // wyslalismy
             MessageDTO localCopy = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick, plainText);
             onMessageReceived.accept(localCopy);
 
@@ -173,7 +175,8 @@ public class NetworkService {
                 if (aesKey != null) {
                     String decryptedText = cryptoService.decryptMessage(message.getEncryptedPayload(), aesKey);
                     // Tworzymy nowa wiadomosc z odczytanym tekstem dla GUI
-                    MessageDTO decryptedMessage = new MessageDTO(MessageDTO.MessageType.CHAT, sender, message.getRecipient(), decryptedText);
+                    MessageDTO decryptedMessage = new MessageDTO(MessageDTO.MessageType.CHAT, sender,
+                            message.getRecipient(), decryptedText);
                     onMessageReceived.accept(decryptedMessage);
                 }
             } else {
@@ -186,9 +189,12 @@ public class NetworkService {
 
     public void disconnect() {
         try {
-            if (socket != null && !socket.isClosed()) socket.close();
-            if (in != null) in.close();
-            if (out != null) out.close();
+            if (socket != null && !socket.isClosed())
+                socket.close();
+            if (in != null)
+                in.close();
+            if (out != null)
+                out.close();
         } catch (IOException e) {
             e.printStackTrace();
         }

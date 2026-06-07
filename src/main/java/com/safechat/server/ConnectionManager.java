@@ -34,7 +34,7 @@ public class ConnectionManager {
             if (!entry.getKey().equals(newNick)) {
                 MessageDTO joinMsg = new MessageDTO(
                         MessageDTO.MessageType.JOIN, entry.getKey(), "ALL",
-                        "Hello World", entry.getValue()
+                        "", entry.getValue()
                 );
                 newHandler.sendMessage(joinMsg);
             }

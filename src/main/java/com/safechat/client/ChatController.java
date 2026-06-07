@@ -10,12 +10,18 @@ import javafx.scene.layout.VBox;
 public class ChatController {
 
     // elementy z pliku FXML
-    @FXML private VBox loginPanel;
-    @FXML private BorderPane chatPanel;
-    @FXML private TextField hostField, portField, nickField, messageField;
-    @FXML private Label errorLabel, currentChatLabel, loggedInUserLabel;
-    @FXML private TextArea chatHistory;
-    @FXML private ListView<String> usersList;
+    @FXML
+    private VBox loginPanel;
+    @FXML
+    private BorderPane chatPanel;
+    @FXML
+    private TextField hostField, portField, nickField, messageField;
+    @FXML
+    private Label errorLabel, currentChatLabel, loggedInUserLabel;
+    @FXML
+    private TextArea chatHistory;
+    @FXML
+    private ListView<String> usersList;
 
     private NetworkService networkService;
     private String currentRecipient = "ALL";
@@ -43,11 +49,9 @@ public class ChatController {
             }
         });
 
-        // Tworzymy NetworkService i przekazujemy mu dwie metody - jak wypisac blad i jak wypisac wiadomosc zwykla
         networkService = new NetworkService(
                 this::onMessageReceived,
-                this::onConnectionError
-        );
+                this::onConnectionError);
     }
 
     @FXML
@@ -87,7 +91,8 @@ public class ChatController {
     @FXML
     public void handleSend() {
         String text = messageField.getText().trim();
-        if (text.isEmpty()) return;
+        if (text.isEmpty())
+            return;
 
         if (currentRecipient.equals("ALL")) {
             networkService.sendBroadcastMessage(text);
@@ -107,6 +112,14 @@ public class ChatController {
                 if (!senderNick.equals(networkService.getClientNick()) && !usersList.getItems().contains(senderNick)) {
                     usersList.getItems().add(senderNick);
                 }
+
+                // Komunikat o dolaczeniu widoczny dla wszystkich w czacie ALL
+                String joinNotice = formatCenteredNotice(senderNick + " joined chat");
+                messageHistoryMap.get("ALL").append(joinNotice);
+                if ("ALL".equals(currentRecipient)) {
+                    chatHistory.appendText(joinNotice);
+                }
+                return;
             }
 
             // Ustalamy do jakiego pokoju (klucza w mapie) nalezy wiadomosc
@@ -117,7 +130,7 @@ public class ChatController {
             }
 
             // formatujemy i zapisujemy do mapy
-            String formattedMsg = String.format("[%s -> %s]: %s\n", message.getSender(), message.getRecipient(), message.getContent());
+            String formattedMsg = String.format("[%s] %s\n", message.getSender(), message.getContent());
             messageHistoryMap.putIfAbsent(roomKey, new StringBuilder());
             messageHistoryMap.get(roomKey).append(formattedMsg);
 
@@ -133,5 +146,15 @@ public class ChatController {
             errorLabel.setText(errorMessage);
             chatHistory.appendText("ERROR: " + errorMessage + "\n");
         });
+    }
+
+    // Formatuje tekst jako wycentrowany komunikat otoczony myslnikami
+    private String formatCenteredNotice(String text) {
+        int totalWidth = 50;
+        String padded = " " + text + " ";
+        int dashCount = Math.max(0, totalWidth - padded.length());
+        int leftDashes = dashCount / 2;
+        int rightDashes = dashCount - leftDashes;
+        return "-".repeat(leftDashes) + padded + "-".repeat(rightDashes) + "\n";
     }
 }
