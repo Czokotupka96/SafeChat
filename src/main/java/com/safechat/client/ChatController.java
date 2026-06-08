@@ -22,7 +22,18 @@ import java.util.Set;
 public class ChatController {
 
     // Struktura przechowujaca dane wiadomosci
-    private record ChatMessage(String sender, String content, boolean isSystem) {
+    private static class ChatMessage {
+        final String sender;
+        final String content;
+        final boolean isSystem;
+        boolean readByRecipient; // czy odbiorca odczytal wiadomosc
+
+        ChatMessage(String sender, String content, boolean isSystem) {
+            this.sender = sender;
+            this.content = content;
+            this.isSystem = isSystem;
+            this.readByRecipient = false;
+        }
     }
 
     @FXML
@@ -48,6 +59,8 @@ public class ChatController {
     private final Map<String, Long> lastMessageTime = new HashMap<>();
     // Zestaw czatow z nieprzeczytanymi wiadomosciami
     private final Set<String> unreadChats = new HashSet<>();
+    // Status odczytu ostatniej wiadomosci w czatach prywatnych
+    private final Map<String, Boolean> lastMessageReadStatus = new HashMap<>();
 
     @FXML
     public void initialize() {
@@ -87,6 +100,15 @@ public class ChatController {
                 currentChatLabel.setText("General chat (ALL)");
             } else {
                 currentChatLabel.setText("Private chat with: " + currentRecipient);
+
+                // Wysylamy potwierdzenie odczytu do rozmowcy
+                List<ChatMessage> history = messageHistoryMap.get(newVal);
+                if (history != null && !history.isEmpty()) {
+                    ChatMessage lastMsg = history.get(history.size() - 1);
+                    if (!lastMsg.isSystem && !lastMsg.sender.equals(networkService.getClientNick())) {
+                        networkService.sendReadReceipt(newVal);
+                    }
+                }
             }
 
             // Oznacz jako przeczytane i odswiez liste
@@ -154,7 +176,28 @@ public class ChatController {
     // Odbieranie wiadomosci z serwera
     private void onMessageReceived(MessageDTO message) {
         Platform.runLater(() -> {
-            // Dodawanie nowych osob do bocznej listy (bez siebie))
+            // Obsluga potwierdzenia odczytu
+            if (message.getType() == MessageDTO.MessageType.READ_RECEIPT) {
+                String roomKey = message.getSender();
+                // Oznacza ostatnia wlasna wiadomosc w tym czacie jako odczytana
+                lastMessageReadStatus.put(roomKey, true);
+                List<ChatMessage> history = messageHistoryMap.get(roomKey);
+                if (history != null) {
+                    String myNick = networkService.getClientNick();
+                    for (int i = history.size() - 1; i >= 0; i--) {
+                        if (history.get(i).sender.equals(myNick) && !history.get(i).isSystem) {
+                            history.get(i).readByRecipient = true;
+                            break;
+                        }
+                    }
+                }
+                if (roomKey.equals(currentRecipient)) {
+                    refreshChatDisplay();
+                }
+                return;
+            }
+
+            // Dodawanie nowych osob do bocznej listy
             if (message.getType() == MessageDTO.MessageType.JOIN) {
                 String senderNick = message.getSender();
                 if (!senderNick.equals(networkService.getClientNick()) && !usersList.getItems().contains(senderNick)) {
@@ -185,6 +228,11 @@ public class ChatController {
                 roomKey = message.getSender().equals(myNick) ? message.getRecipient() : message.getSender();
             }
 
+            // Przy nowej wiadomosci resetujemy status odczytu
+            if (message.getSender().equals(networkService.getClientNick()) && !"ALL".equals(roomKey)) {
+                lastMessageReadStatus.put(roomKey, false);
+            }
+
             // Zapisujemy wiadomosc do historii
             addMessage(roomKey, new ChatMessage(message.getSender(), message.getContent(), false));
 
@@ -195,6 +243,11 @@ public class ChatController {
             // Odswiezamy widok czatu jesli aktualnie otwarty pokoj dostal wiadomosc
             if (roomKey.equals(currentRecipient)) {
                 refreshChatDisplay();
+
+                // Jesli odebrano wiadomosc od rozmowcy - wyslij potwierdzenie
+                if (!"ALL".equals(roomKey) && !message.getSender().equals(networkService.getClientNick())) {
+                    networkService.sendReadReceipt(message.getSender());
+                }
             } else {
                 unreadChats.add(roomKey);
                 usersList.refresh();
@@ -211,42 +264,65 @@ public class ChatController {
     private void refreshChatDisplay() {
         chatMessagesBox.getChildren().clear();
         List<ChatMessage> messages = messageHistoryMap.getOrDefault(currentRecipient, new ArrayList<>());
-        for (ChatMessage msg : messages) {
-            chatMessagesBox.getChildren().add(createMessageNode(msg));
+        String myNick = networkService != null ? networkService.getClientNick() : "";
+
+        // Indykator tylko gdy ostatnia wiadomosc w czacie jest nasza
+        int lastOwnMsgIndex = -1;
+        if (!"ALL".equals(currentRecipient) && !messages.isEmpty()) {
+            ChatMessage lastMsg = messages.get(messages.size() - 1);
+            if (lastMsg.sender.equals(myNick) && !lastMsg.isSystem) {
+                lastOwnMsgIndex = messages.size() - 1;
+            }
+        }
+
+        for (int i = 0; i < messages.size(); i++) {
+            chatMessagesBox.getChildren().add(createMessageNode(messages.get(i), i == lastOwnMsgIndex));
         }
         // Auto-scroll na dol
         Platform.runLater(() -> chatScrollPane.setVvalue(1.0));
     }
 
     // Tworzy wezel wiadomosci z odpowiednim wyrownaniem i stylem
-    private Node createMessageNode(ChatMessage msg) {
+    private Node createMessageNode(ChatMessage msg, boolean isLastOwnMessage) {
         String myNick = networkService != null ? networkService.getClientNick() : "";
 
         HBox container = new HBox();
         container.setMaxWidth(Double.MAX_VALUE);
+        container.setSpacing(4);
 
         Label label = new Label();
         label.setWrapText(true);
         label.setMaxWidth(350);
 
-        if (msg.isSystem()) {
+        if (msg.isSystem) {
             // Wiadomosc systemowa - wycentrowana, szara kursywa
-            label.setText(msg.content());
+            label.setText(msg.content);
             label.setStyle("-fx-padding: 4 10; -fx-text-fill: #888888; -fx-font-style: italic; "
                     + "-fx-font-family: 'Consolas';");
             container.setAlignment(Pos.CENTER);
-        } else if (msg.sender().equals(myNick)) {
+        } else if (msg.sender.equals(myNick)) {
             // Wlasna wiadomosc - prawa strona
-            label.setText(msg.content());
+            label.setText(msg.content);
             label.setStyle("-fx-padding: 6 12; -fx-background-color: #e8f4dfff; "
                     + "-fx-background-radius: 12 12 0 12; -fx-font-family: 'Consolas';");
             container.setAlignment(Pos.CENTER_RIGHT);
+
+            // Indykator odczytu - tylko przy ostatniej wiadomosci w czacie prywatnym
+            if (isLastOwnMessage && !"ALL".equals(currentRecipient)) {
+                Label indicator = new Label(msg.readByRecipient ? "\u25CF" : "\u25CB");
+                indicator.setStyle("-fx-font-size: 10px; -fx-text-fill: "
+                        + (msg.readByRecipient ? "#5abc7c" : "#aaaaaa") + ";");
+                indicator.setMinWidth(12);
+                container.getChildren().add(label);
+                container.getChildren().add(indicator);
+                return container;
+            }
         } else {
             // Cudza wiadomosc - lewa strona
             if ("ALL".equals(currentRecipient)) { // ALL - z prefixem
-                label.setText("[" + msg.sender() + "] " + msg.content());
+                label.setText("[" + msg.sender + "] " + msg.content);
             } else { // prywatny - bez prefixu
-                label.setText(msg.content());
+                label.setText(msg.content);
             }
             label.setStyle("-fx-padding: 6 12; -fx-background-color: rgb(245, 232, 232); "
                     + "-fx-background-radius: 12 12 12 0; -fx-font-family: 'Consolas'; "

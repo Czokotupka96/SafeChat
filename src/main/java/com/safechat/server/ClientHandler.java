@@ -72,6 +72,9 @@ public class ClientHandler implements Runnable {
                         MessageDTO errMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_ERROR, "Server", clientNick, "User '" + targetNick + "' is not available");
                         sendMessage(errMsg);
                     }
+                } else if (message.getType() == MessageDTO.MessageType.READ_RECEIPT) {
+                    // przekazanie potwierdzenia odczytu do nadawcy oryginalnej wiadomosci
+                    connectionManager.sendPrivateMessage(message);
                 } else if (message.getType() == MessageDTO.MessageType.KEY_EXCHANGE) {
                     // przekazanie wymiany kluczy do odbiorcy, serwer nie widzi wiadomosci
                     connectionManager.sendPrivateMessage(message);

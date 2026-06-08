@@ -89,14 +89,17 @@ public class NetworkService {
                     }
 
                     // obsluga typow wiadomosci
-                    if (receivedMessage.getType() == MessageDTO.MessageType.KEY_EXCHANGE) {
+                    if (receivedMessage.getType() == MessageDTO.MessageType.READ_RECEIPT) {
+                        // potwierdzenie odczytu
+                        onMessageReceived.accept(receivedMessage);
+                    } else if (receivedMessage.getType() == MessageDTO.MessageType.KEY_EXCHANGE) {
                         if (!receivedMessage.getSender().equals(clientNick)) {
                             handleKeyExchange(receivedMessage);
                         }
                     } else if (receivedMessage.getType() == MessageDTO.MessageType.CHAT) {
                         handleChatMessage(receivedMessage);
                     } else {
-                        // pozostale wiadomosci prosto do GUI
+                        // pozostale wiadomosci
                         onMessageReceived.accept(receivedMessage);
                     }
                 }
@@ -148,6 +151,17 @@ public class NetworkService {
 
         } catch (Exception e) {
             onConnectionError.accept("Encryption error: " + e.getMessage());
+        }
+    }
+
+    // Wysylanie potwierdzenia odczytu do rozmowcy
+    public void sendReadReceipt(String recipientNick) {
+        try {
+            MessageDTO receipt = new MessageDTO(MessageDTO.MessageType.READ_RECEIPT, clientNick, recipientNick, "");
+            out.writeObject(receipt);
+            out.flush();
+        } catch (IOException e) {
+            // potwierdzenie odczytu nie jest krytyczne - ignorujemy blad
         }
     }
 
