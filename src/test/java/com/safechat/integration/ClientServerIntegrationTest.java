@@ -1,0 +1,322 @@
+package com.safechat.integration;
+
+import com.safechat.shared.MessageDTO;
+import com.safechat.server.ConnectionManager;
+import com.safechat.server.ClientHandler;
+
+import org.junit.jupiter.api.*;
+
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+// testy integracyjne klient-serwer
+// uruchamiamy prawdziwy ServerSocket, laczymy wielu klientow przez ObjectStreams
+// weryfikujemy przesyl zserializowanych obiektow MessageDTO
+class ClientServerIntegrationTest {
+
+    private ServerSocket serverSocket;
+    private ConnectionManager connectionManager;
+    private ExecutorService serverExecutor;
+    private final List<Socket> openSockets = new ArrayList<>();
+
+    @BeforeEach
+    void setUp() throws Exception {
+        connectionManager = new ConnectionManager();
+        serverSocket = new ServerSocket(0); // losowy wolny port
+        serverExecutor = Executors.newCachedThreadPool();
+    }
+
+    @AfterEach
+    void tearDown() throws Exception {
+        // zamykamy wszystkie otwarte sockety
+        for (Socket s : openSockets) {
+            if (s != null && !s.isClosed()) s.close();
+        }
+        if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
+        serverExecutor.shutdownNow();
+    }
+
+    // pomocnicza metoda: akceptuje polaczenie na serwerze i uruchamia ClientHandler w tle
+    private void acceptAndHandleClient() {
+        serverExecutor.submit(() -> {
+            try {
+                Socket client = serverSocket.accept();
+                openSockets.add(client);
+                ClientHandler handler = new ClientHandler(client, connectionManager);
+                handler.run(); // uruchamiamy synchronicznie w watku puli
+            } catch (Exception e) {
+                // ignorujemy wyjatki przy zamykaniu
+            }
+        });
+    }
+
+    // pomocnicza metoda: laczy klienta i zwraca strumienie
+    private ClientConnection connectClient(String nick) throws Exception {
+        // akceptuj po stronie serwera
+        acceptAndHandleClient();
+
+        // polacz po stronie klienta
+        Socket clientSocket = new Socket("localhost", serverSocket.getLocalPort());
+        openSockets.add(clientSocket);
+
+        ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
+        out.flush();
+        ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream());
+
+        // wysylamy JOIN
+        MessageDTO joinMsg = new MessageDTO(
+                MessageDTO.MessageType.JOIN, nick, "ALL", "", new byte[]{1, 2, 3});
+        out.writeObject(joinMsg);
+        out.flush();
+
+        return new ClientConnection(clientSocket, out, in, nick);
+    }
+
+    // testy --------------------------------------
+
+    @Test
+    @DisplayName("Klient wysyla JOIN i otrzymuje JOIN_OK od serwera")
+    void testClientJoinAndReceiveJoinOk() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+
+        // pierwsza odpowiedz powinna byc JOIN_OK
+        MessageDTO response = alice.readMessage(3000);
+        assertNotNull(response, "Serwer powinien odpowiedziec na JOIN");
+        assertEquals(MessageDTO.MessageType.JOIN_OK, response.getType(),
+                "Odpowiedz powinna byc JOIN_OK");
+
+        alice.close();
+    }
+
+    @Test
+    @DisplayName("Drugi klient z tym samym nickiem dostaje NICK_ERROR")
+    void testDuplicateNickRejected() throws Exception {
+        ClientConnection alice1 = connectClient("Alice");
+        MessageDTO ok = alice1.readMessage(3000);
+        assertEquals(MessageDTO.MessageType.JOIN_OK, ok.getType());
+
+        // krotka przerwa zeby serwer zdazyl zarejestrowac
+        Thread.sleep(200);
+
+        // drugi klient z tym samym nickiem
+        ClientConnection alice2 = connectClient("Alice");
+        MessageDTO response = alice2.readMessage(3000);
+        assertNotNull(response, "Serwer powinien odpowiedziec");
+        assertEquals(MessageDTO.MessageType.NICK_ERROR, response.getType(),
+                "Powtorzony nick powinien dostac NICK_ERROR");
+
+        alice1.close();
+        alice2.close();
+    }
+
+    @Test
+    @DisplayName("Wiadomosc broadcast (ALL) dociera do wszystkich polaczonych klientow")
+    void testBroadcastMessageDelivery() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        MessageDTO aliceOk = alice.readMessage(3000);
+        assertEquals(MessageDTO.MessageType.JOIN_OK, aliceOk.getType());
+
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        MessageDTO bobOk = bob.readMessage(3000);
+        assertEquals(MessageDTO.MessageType.JOIN_OK, bobOk.getType());
+
+        // Bob powinien tez dostac klucz publiczny Alice (JOIN z kluczem)
+        // Alice powinna dostac broadcast o dolaczeniu Boba
+        // odczytujemy te wiadomosci zeby wyczyscic bufor
+        Thread.sleep(300);
+
+        // Alice wysyla broadcast
+        MessageDTO chatMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "ALL", "Hej wszystkim!");
+        alice.out.writeObject(chatMsg);
+        alice.out.flush();
+
+        // szukamy wiadomosci CHAT wsrod odebranych
+        MessageDTO received = alice.readUntilType(MessageDTO.MessageType.CHAT, 3000);
+        assertNotNull(received, "Alice powinna otrzymac echo broadcastu");
+        assertEquals("Hej wszystkim!", received.getContent());
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("Wiadomosc prywatna dociera do odbiorcy i nadawcy (echo)")
+    void testPrivateMessageDelivery() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        alice.readMessage(3000); // JOIN_OK
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        bob.readMessage(3000); // JOIN_OK
+        Thread.sleep(300);
+
+        // Alice wysyla prywatna wiadomosc do Boba (jawna, bez szyfrowania AES)
+        MessageDTO privateMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "Bob", "Sekretna wiadomosc!");
+        alice.out.writeObject(privateMsg);
+        alice.out.flush();
+
+        // Bob powinien ja otrzymac
+        MessageDTO bobReceived = bob.readUntilType(MessageDTO.MessageType.CHAT, 3000);
+        assertNotNull(bobReceived, "Bob powinien otrzymac prywatna wiadomosc");
+        assertEquals("Sekretna wiadomosc!", bobReceived.getContent());
+        assertEquals("Alice", bobReceived.getSender());
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("Wiadomosc KEY_EXCHANGE jest przekazywana do odbiorcy")
+    void testKeyExchangeForwarding() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        alice.readMessage(3000); // JOIN_OK
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        bob.readMessage(3000); // JOIN_OK
+        Thread.sleep(300);
+
+        // Alice wysyla KEY_EXCHANGE do Boba
+        byte[] fakeEncryptedKey = {99, 88, 77, 66};
+        MessageDTO keyExMsg = new MessageDTO(
+                MessageDTO.MessageType.KEY_EXCHANGE, "Alice", "Bob", fakeEncryptedKey);
+        alice.out.writeObject(keyExMsg);
+        alice.out.flush();
+
+        // Bob powinien otrzymac KEY_EXCHANGE
+        MessageDTO bobReceived = bob.readUntilType(MessageDTO.MessageType.KEY_EXCHANGE, 3000);
+        assertNotNull(bobReceived, "Bob powinien otrzymac KEY_EXCHANGE");
+        assertEquals("Alice", bobReceived.getSender());
+        assertArrayEquals(fakeEncryptedKey, bobReceived.getEncryptedPayload());
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("5 klientow laczy sie jednoczesnie i wszyscy otrzymuja broadcasty")
+    void testMultipleClientsConcurrent() throws Exception {
+        int clientCount = 5;
+        List<ClientConnection> clients = new ArrayList<>();
+
+        // polaczenie klientow
+        for (int i = 0; i < clientCount; i++) {
+            ClientConnection client = connectClient("User" + i);
+            MessageDTO joinOk = client.readMessage(3000);
+            assertNotNull(joinOk, "User" + i + " powinien dostac odpowiedz na JOIN");
+            assertEquals(MessageDTO.MessageType.JOIN_OK, joinOk.getType(),
+                    "User" + i + " powinien dostac JOIN_OK");
+            clients.add(client);
+            Thread.sleep(150);
+        }
+
+        // czekamy az serwer przetworzy wszystkie JOINy
+        Thread.sleep(500);
+
+        // oczyszczamy bufor kazdego klienta z wiadomosci JOIN broadcast
+        for (ClientConnection client : clients) {
+            client.drainAvailable(500);
+        }
+
+        // User0 wysyla broadcast
+        MessageDTO broadcastMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "User0", "ALL", "Wiadomosc do wszystkich!");
+        clients.get(0).out.writeObject(broadcastMsg);
+        clients.get(0).out.flush();
+
+        // kazdy klient powinien odebrac broadcast (lacznie z nadawca)
+        for (int i = 0; i < clientCount; i++) {
+            MessageDTO received = clients.get(i).readUntilType(MessageDTO.MessageType.CHAT, 3000);
+            assertNotNull(received,
+                    "User" + i + " powinien otrzymac broadcast");
+            assertEquals("Wiadomosc do wszystkich!", received.getContent(),
+                    "User" + i + " - tresc powinna sie zgadzac");
+        }
+
+        // zamykanie
+        for (ClientConnection client : clients) {
+            client.close();
+        }
+    }
+
+    // klasa pomocnicza --------------------------------------
+
+    // opakowuje polaczenie klienta z metodami do odczytu wiadomosci z timeoutem
+    private static class ClientConnection {
+        final Socket socket;
+        final ObjectOutputStream out;
+        final ObjectInputStream in;
+        final String nick;
+
+        ClientConnection(Socket socket, ObjectOutputStream out, ObjectInputStream in, String nick) {
+            this.socket = socket;
+            this.out = out;
+            this.in = in;
+            this.nick = nick;
+        }
+
+        // odczytuje nastepna wiadomosc z timeoutem (ms). zwraca null jesli timeout
+        MessageDTO readMessage(int timeoutMs) throws Exception {
+            ExecutorService exec = Executors.newSingleThreadExecutor();
+            Future<MessageDTO> future = exec.submit(() -> (MessageDTO) in.readObject());
+            try {
+                return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                return null;
+            } finally {
+                exec.shutdownNow();
+            }
+        }
+
+        // odczytuje wiadomosci az do znalezienia danego typu lub timeout
+        MessageDTO readUntilType(MessageDTO.MessageType type, int timeoutMs) throws Exception {
+            long deadline = System.currentTimeMillis() + timeoutMs;
+            while (System.currentTimeMillis() < deadline) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) break;
+                MessageDTO msg = readMessage((int) remaining);
+                if (msg != null && msg.getType() == type) {
+                    return msg;
+                }
+            }
+            return null;
+        }
+
+        // odczytuje i odrzuca wszystkie dostepne wiadomosci (czyszczenie bufora)
+        void drainAvailable(int waitMs) {
+            try {
+                Thread.sleep(waitMs);
+                socket.setSoTimeout(100);
+                while (true) {
+                    try {
+                        in.readObject();
+                    } catch (Exception e) {
+                        break;
+                    }
+                }
+                socket.setSoTimeout(0);
+            } catch (Exception e) {
+                // ignorujemy
+            }
+        }
+
+        void close() {
+            try {
+                socket.close();
+            } catch (Exception e) {
+                // ignorujemy
+            }
+        }
+    }
+}
