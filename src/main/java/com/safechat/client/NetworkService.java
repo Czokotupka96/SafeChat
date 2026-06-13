@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
 public class NetworkService {
@@ -18,6 +20,18 @@ public class NetworkService {
     // laczenie silnika sieciowego z GUI
     private final Consumer<MessageDTO> onMessageReceived;
     private final Consumer<String> onConnectionError;
+
+    // bufor do skladania chunkow
+    private final Map<String, Map<Integer, String>> chunkBuffer = new ConcurrentHashMap<>();
+    // metadane pierwszego chunka
+    private final Map<String, MessageDTO> chunkMetadata = new ConcurrentHashMap<>();
+    // czas odebrania pierwszego chunka
+    private final Map<String, Long> chunkTimestamps = new ConcurrentHashMap<>();
+    // oczekiwana liczba chunkow
+    private final Map<String, Integer> chunkExpected = new ConcurrentHashMap<>();
+
+    private static final long CHUNK_TIMEOUT_MS = 30_000; // 30 sekund timeout na niekompletna wiadomosc
+    private ScheduledExecutorService chunkCleanupScheduler;
 
     public NetworkService(Consumer<MessageDTO> onMessageReceived, Consumer<String> onConnectionError) {
         this.onMessageReceived = onMessageReceived;
@@ -48,6 +62,7 @@ public class NetworkService {
             MessageDTO response = (MessageDTO) in.readObject();
             if (response.getType() == MessageDTO.MessageType.JOIN_OK) {
                 this.clientNick = nick;
+                startChunkCleanup();
                 startListening(); // nasluchiwanie w tle
                 return true;
             } else {
@@ -108,21 +123,38 @@ public class NetworkService {
                 disconnect();
             }
         });
-        // Daemon = true - thread zamknie sie sam kiedy wylaczymy okienko JavaFX
+        // Daemon = true - thread zamknie sie sam kiedy zamkniemy aplikacje
         listenerThread.setDaemon(true);
         listenerThread.start();
     }
 
+    // Wysylanie wiadomosci broadcast (ALL) z obsluga chunkowania
     public void sendBroadcastMessage(String text) {
         try {
-            MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, "ALL", text);
-            out.writeObject(chatMessage);
-            out.flush();
+            List<String> chunks = splitText(text);
+
+            if (chunks.size() == 1) {
+                MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, "ALL", text);
+                out.writeObject(chatMessage);
+                out.flush();
+            } else {
+                // dluga wiadomosc - dzielenie na chunki
+                String messageId = UUID.randomUUID().toString();
+                for (int i = 0; i < chunks.size(); i++) {
+                    MessageDTO chunkMsg = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, "ALL", chunks.get(i));
+                    chunkMsg.setMessageId(messageId);
+                    chunkMsg.setChunkIndex(i);
+                    chunkMsg.setTotalChunks(chunks.size());
+                    out.writeObject(chunkMsg);
+                    out.flush();
+                }
+            }
         } catch (IOException e) {
             onConnectionError.accept("Sendning error: " + e.getMessage());
         }
     }
 
+    // Wysylanie wiadomosci prywatnej (szyfrowanej) z obsluga chunkowania
     public void sendPrivateMessage(String recipientNick, String plainText) {
         try {
             if (!cryptoService.hasPublicKey(recipientNick)) {
@@ -130,6 +162,7 @@ public class NetworkService {
                 return;
             }
 
+            // wymiana klucza AES jesli jeszcze nie istnieje
             if (!cryptoService.hasAesKey(recipientNick)) {
                 SecretKey aesKey = cryptoService.generateAesKey();
                 cryptoService.storeAesKey(recipientNick, aesKey);
@@ -142,12 +175,29 @@ public class NetworkService {
             }
 
             SecretKey aesKey = cryptoService.getAesKey(recipientNick);
-            byte[] encryptedContent = cryptoService.encryptMessage(plainText, aesKey);
+            List<String> chunks = splitText(plainText);
 
-            MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick,
-                    encryptedContent);
-            out.writeObject(chatMessage);
-            out.flush();
+            if (chunks.size() == 1) {
+                // krotka wiadomosc - bez chunkowania
+                byte[] encryptedContent = cryptoService.encryptMessage(plainText, aesKey);
+                MessageDTO chatMessage = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick,
+                        encryptedContent);
+                out.writeObject(chatMessage);
+                out.flush();
+            } else {
+                // dluga wiadomosc - kazdy chunk szyfrowany osobno
+                String messageId = UUID.randomUUID().toString();
+                for (int i = 0; i < chunks.size(); i++) {
+                    byte[] encryptedChunk = cryptoService.encryptMessage(chunks.get(i), aesKey);
+                    MessageDTO chunkMsg = new MessageDTO(MessageDTO.MessageType.CHAT, clientNick, recipientNick,
+                            encryptedChunk);
+                    chunkMsg.setMessageId(messageId);
+                    chunkMsg.setChunkIndex(i);
+                    chunkMsg.setTotalChunks(chunks.size());
+                    out.writeObject(chunkMsg);
+                    out.flush();
+                }
+            }
 
         } catch (Exception e) {
             onConnectionError.accept("Encryption error: " + e.getMessage());
@@ -161,7 +211,6 @@ public class NetworkService {
             out.writeObject(receipt);
             out.flush();
         } catch (IOException e) {
-            // potwierdzenie odczytu nie jest krytyczne - ignorujemy blad
         }
     }
 
@@ -174,7 +223,71 @@ public class NetworkService {
         }
     }
 
+    // Obsluga odebranej wiadomosci CHAT - z uwzglednieniem chunkowania
     private void handleChatMessage(MessageDTO message) {
+        try {
+            if (message.getTotalChunks() <= 1) {
+                deliverDecryptedMessage(message);
+                return;
+            }
+
+            // Wiadomosc chunkowana
+            String msgId = message.getMessageId();
+            if (msgId == null) {
+                return;
+            }
+
+            // Odszyfruj chunk jesli zaszyfrowany
+            String chunkText;
+            if (message.getEncryptedPayload() != null) {
+                String sender = message.getSender();
+                String keyOwner = sender.equals(clientNick) ? message.getRecipient() : sender;
+                SecretKey aesKey = cryptoService.getAesKey(keyOwner);
+                if (aesKey == null) {
+                    return; // brak klucza
+                }
+                chunkText = cryptoService.decryptMessage(message.getEncryptedPayload(), aesKey);
+            } else {
+                chunkText = message.getContent();
+            }
+
+            // Zapisz chunk do bufora
+            chunkBuffer.computeIfAbsent(msgId, k -> new ConcurrentHashMap<>()).put(message.getChunkIndex(), chunkText);
+            chunkMetadata.putIfAbsent(msgId, message);
+            chunkTimestamps.putIfAbsent(msgId, System.currentTimeMillis());
+            chunkExpected.putIfAbsent(msgId, message.getTotalChunks());
+
+            // Sprawdz czy mamy juz wszystkie chunki
+            Map<Integer, String> chunks = chunkBuffer.get(msgId);
+            int expected = chunkExpected.get(msgId);
+
+            if (chunks.size() == expected) {
+                StringBuilder fullText = new StringBuilder();
+                for (int i = 0; i < expected; i++) {
+                    String part = chunks.get(i);
+                    if (part != null) {
+                        fullText.append(part);
+                    }
+                }
+                MessageDTO originalMeta = chunkMetadata.get(msgId);
+                MessageDTO fullMessage = new MessageDTO(
+                        MessageDTO.MessageType.CHAT,
+                        originalMeta.getSender(),
+                        originalMeta.getRecipient(),
+                        fullText.toString());
+
+                onMessageReceived.accept(fullMessage);
+
+                cleanupChunkData(msgId);
+            }
+
+        } catch (Exception e) {
+            onConnectionError.accept("Error processing message.");
+        }
+    }
+
+    // Dostarczanie niechunkowanej wiadomosci
+    private void deliverDecryptedMessage(MessageDTO message) {
         try {
             if (message.getEncryptedPayload() != null) {
                 String sender = message.getSender();
@@ -195,8 +308,61 @@ public class NetworkService {
         }
     }
 
+    private List<String> splitText(String text) {
+        int maxSize = MessageDTO.MAX_CHUNK_SIZE;
+        if (text.length() <= maxSize) {
+            return Collections.singletonList(text);
+        }
+
+        List<String> chunks = new ArrayList<>();
+        for (int i = 0; i < text.length(); i += maxSize) {
+            int end = Math.min(i + maxSize, text.length());
+            chunks.add(text.substring(i, end));
+        }
+
+        if (chunks.size() > MessageDTO.MAX_TOTAL_CHUNKS) {
+            chunks = chunks.subList(0, MessageDTO.MAX_TOTAL_CHUNKS);
+        }
+
+        return chunks;
+    }
+
+    private void startChunkCleanup() {
+        chunkCleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "ChunkCleanup");
+            t.setDaemon(true);
+            return t;
+        });
+
+        chunkCleanupScheduler.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            List<String> expired = new ArrayList<>();
+
+            for (Map.Entry<String, Long> entry : chunkTimestamps.entrySet()) {
+                if (now - entry.getValue() > CHUNK_TIMEOUT_MS) {
+                    expired.add(entry.getKey());
+                }
+            }
+
+            for (String msgId : expired) {
+                System.out.println("[CHUNK] Timeout - cleaning incomplete message: " + msgId);
+                cleanupChunkData(msgId);
+            }
+        }, 10, 10, TimeUnit.SECONDS);
+    }
+
+    private void cleanupChunkData(String msgId) {
+        chunkBuffer.remove(msgId);
+        chunkMetadata.remove(msgId);
+        chunkTimestamps.remove(msgId);
+        chunkExpected.remove(msgId);
+    }
+
     public void disconnect() {
         try {
+            if (chunkCleanupScheduler != null) {
+                chunkCleanupScheduler.shutdownNow();
+            }
             if (socket != null && !socket.isClosed())
                 socket.close();
             if (in != null)

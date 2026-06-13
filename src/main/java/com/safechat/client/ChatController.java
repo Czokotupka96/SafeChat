@@ -164,6 +164,15 @@ public class ChatController {
         if (text.isEmpty())
             return;
 
+        // Walidacja maksymalnej dlugosci wiadomosci
+        int maxLength = MessageDTO.MAX_CHUNK_SIZE * MessageDTO.MAX_TOTAL_CHUNKS;
+        if (text.length() > maxLength) {
+            addMessage(currentRecipient, new ChatMessage("System",
+                    "Message too long. Max " + maxLength + " characters.", true));
+            refreshChatDisplay();
+            return;
+        }
+
         if (currentRecipient.equals("ALL")) {
             networkService.sendBroadcastMessage(text);
         } else {

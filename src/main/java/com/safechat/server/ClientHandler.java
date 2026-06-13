@@ -28,18 +28,30 @@ public class ClientHandler implements Runnable {
 
             while (true) {
                 MessageDTO message = (MessageDTO) in.readObject();
+
+                // Walidacja rozmiaru wiadomosci
+                if (message.getContent() != null && message.getContent().length() > MessageDTO.MAX_CHUNK_SIZE * 2) {
+                    System.err.println("[SERVER] Rejected oversized message from " + clientNick);
+                    continue;
+                }
+                if (message.getTotalChunks() > MessageDTO.MAX_TOTAL_CHUNKS) {
+                    System.err.println("[SERVER] Rejected message with too many chunks from " + clientNick);
+                    continue;
+                }
+
                 System.out.println("Server received: " + message);
 
-                // Weryfikujemy nick po dolaczeniu nowego uzytkownika 
+                // Weryfikujemy nick po dolaczeniu nowego uzytkownika
                 if (message.getType() == MessageDTO.MessageType.JOIN) {
                     String wantedNick = message.getSender();
-                    
+
                     // Proba rejestracji
                     boolean isRegistered = connectionManager.registerClient(wantedNick, this);
 
                     if (!isRegistered) {
                         // gdy nick zajety odrzuca probe
-                        MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.NICK_ERROR, "Server", wantedNick, "Error: Nick '" + wantedNick + "' is already used");
+                        MessageDTO errorMsg = new MessageDTO(MessageDTO.MessageType.NICK_ERROR, "Server", wantedNick,
+                                "Error: Nick '" + wantedNick + "' is already used");
                         sendMessage(errorMsg);
                         continue;
                     }
@@ -58,18 +70,20 @@ public class ClientHandler implements Runnable {
 
                     // broadcast JOIN z kluczem publicznym do wszystkich
                     connectionManager.broadcast(message);
-                    
-                } else if (message.getType() == MessageDTO.MessageType.SWITCH_REQUEST){
+
+                } else if (message.getType() == MessageDTO.MessageType.SWITCH_REQUEST) {
                     // uzytkownik pyta czy moze przelaczyc
                     String targetNick = message.getRecipient();
 
                     if (connectionManager.isClientActive(targetNick)) {
                         // uzytkownik istnieje
-                        MessageDTO okMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_OK, "Server", clientNick, targetNick);
+                        MessageDTO okMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_OK, "Server", clientNick,
+                                targetNick);
                         sendMessage(okMsg);
                     } else {
                         // uzytkownik nie istnieje
-                        MessageDTO errMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_ERROR, "Server", clientNick, "User '" + targetNick + "' is not available");
+                        MessageDTO errMsg = new MessageDTO(MessageDTO.MessageType.SWITCH_ERROR, "Server", clientNick,
+                                "User '" + targetNick + "' is not available");
                         sendMessage(errMsg);
                     }
                 } else if (message.getType() == MessageDTO.MessageType.READ_RECEIPT) {
@@ -113,9 +127,12 @@ public class ClientHandler implements Runnable {
     // bezpieczne zamykanie strumieni i gniazda
     private void closeEverything() {
         try {
-            if (in != null) in.close();
-            if (out != null) out.close();
-            if (socket != null) socket.close();
+            if (in != null)
+                in.close();
+            if (out != null)
+                out.close();
+            if (socket != null)
+                socket.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
