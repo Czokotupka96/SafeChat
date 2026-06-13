@@ -36,13 +36,16 @@ class ClientServerIntegrationTest {
     void tearDown() throws Exception {
         // zamykamy wszystkie otwarte sockety
         for (Socket s : openSockets) {
-            if (s != null && !s.isClosed()) s.close();
+            if (s != null && !s.isClosed())
+                s.close();
         }
-        if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
+        if (serverSocket != null && !serverSocket.isClosed())
+            serverSocket.close();
         serverExecutor.shutdownNow();
     }
 
-    // pomocnicza metoda: akceptuje polaczenie na serwerze i uruchamia ClientHandler w tle
+    // pomocnicza metoda: akceptuje polaczenie na serwerze i uruchamia ClientHandler
+    // w tle
     private void acceptAndHandleClient() {
         serverExecutor.submit(() -> {
             try {
@@ -71,7 +74,7 @@ class ClientServerIntegrationTest {
 
         // wysylamy JOIN
         MessageDTO joinMsg = new MessageDTO(
-                MessageDTO.MessageType.JOIN, nick, "ALL", "", new byte[]{1, 2, 3});
+                MessageDTO.MessageType.JOIN, nick, "ALL", "", new byte[] { 1, 2, 3 });
         out.writeObject(joinMsg);
         out.flush();
 
@@ -187,7 +190,7 @@ class ClientServerIntegrationTest {
         Thread.sleep(300);
 
         // Alice wysyla KEY_EXCHANGE do Boba
-        byte[] fakeEncryptedKey = {99, 88, 77, 66};
+        byte[] fakeEncryptedKey = { 99, 88, 77, 66 };
         MessageDTO keyExMsg = new MessageDTO(
                 MessageDTO.MessageType.KEY_EXCHANGE, "Alice", "Bob", fakeEncryptedKey);
         alice.out.writeObject(keyExMsg);
@@ -249,6 +252,157 @@ class ClientServerIntegrationTest {
         }
     }
 
+    // testy chunkowania wiadomosci --------------------------------------
+
+    @Test
+    @DisplayName("Serwer przekazuje chunki wiadomosci broadcast do wszystkich klientow")
+    void testBroadcastChunkedMessageDelivery() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        MessageDTO aliceOk = alice.readMessage(3000);
+        assertEquals(MessageDTO.MessageType.JOIN_OK, aliceOk.getType());
+
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        MessageDTO bobOk = bob.readMessage(3000);
+        assertEquals(MessageDTO.MessageType.JOIN_OK, bobOk.getType());
+
+        Thread.sleep(300);
+
+        alice.drainAvailable(500);
+        bob.drainAvailable(500);
+
+        String messageId = "test-msg-001";
+        for (int i = 0; i < 3; i++) {
+            MessageDTO chunk = new MessageDTO(
+                    MessageDTO.MessageType.CHAT, "Alice", "ALL", "Chunk" + i);
+            chunk.setMessageId(messageId);
+            chunk.setChunkIndex(i);
+            chunk.setTotalChunks(3);
+            alice.out.writeObject(chunk);
+            alice.out.flush();
+        }
+
+        List<MessageDTO> bobChunks = bob.readMessages(3, 5000);
+        assertEquals(3, bobChunks.size(), "Bob powinien otrzymac 3 chunki");
+
+        for (int i = 0; i < 3; i++) {
+            MessageDTO chunk = bobChunks.get(i);
+            assertEquals("Alice", chunk.getSender());
+            assertEquals("Chunk" + i, chunk.getContent());
+            assertEquals(messageId, chunk.getMessageId());
+            assertEquals(i, chunk.getChunkIndex());
+            assertEquals(3, chunk.getTotalChunks());
+        }
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("Serwer przekazuje chunki wiadomosci prywatnej do odbiorcy i nadawcy")
+    void testPrivateChunkedMessageDelivery() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        alice.readMessage(3000);
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        bob.readMessage(3000);
+        Thread.sleep(300);
+
+        alice.drainAvailable(500);
+        bob.drainAvailable(500);
+
+        String messageId = "private-msg-001";
+        for (int i = 0; i < 2; i++) {
+            MessageDTO chunk = new MessageDTO(
+                    MessageDTO.MessageType.CHAT, "Alice", "Bob", "PrivChunk" + i);
+            chunk.setMessageId(messageId);
+            chunk.setChunkIndex(i);
+            chunk.setTotalChunks(2);
+            alice.out.writeObject(chunk);
+            alice.out.flush();
+        }
+
+        List<MessageDTO> bobChunks = bob.readMessages(2, 5000);
+        assertEquals(2, bobChunks.size(), "Bob powinien otrzymac 2 chunki prywatnej wiadomosci");
+        assertEquals("PrivChunk0", bobChunks.get(0).getContent());
+        assertEquals("PrivChunk1", bobChunks.get(1).getContent());
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("Serwer odrzuca wiadomosc z trescia dluzsza niz MAX_CHUNK_SIZE * 2")
+    void testServerRejectsOversizedMessage() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        alice.readMessage(3000);
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        bob.readMessage(3000);
+        Thread.sleep(300);
+
+        alice.drainAvailable(500);
+        bob.drainAvailable(500);
+
+        String oversizedContent = "X".repeat(MessageDTO.MAX_CHUNK_SIZE * 2 + 1);
+        MessageDTO oversizedMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "ALL", oversizedContent);
+        alice.out.writeObject(oversizedMsg);
+        alice.out.flush();
+
+        MessageDTO normalMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "ALL", "Normal message");
+        alice.out.writeObject(normalMsg);
+        alice.out.flush();
+
+        MessageDTO received = bob.readUntilType(MessageDTO.MessageType.CHAT, 3000);
+        assertNotNull(received, "Bob powinien dostac normalna wiadomosc");
+        assertEquals("Normal message", received.getContent(),
+                "Odrzucona wiadomosc nie powinna dotrzec, powinna dotrzec tylko normalna");
+
+        alice.close();
+        bob.close();
+    }
+
+    @Test
+    @DisplayName("Serwer odrzuca wiadomosc z totalChunks > MAX_TOTAL_CHUNKS")
+    void testServerRejectsTooManyChunks() throws Exception {
+        ClientConnection alice = connectClient("Alice");
+        alice.readMessage(3000);
+        Thread.sleep(200);
+
+        ClientConnection bob = connectClient("Bob");
+        bob.readMessage(3000);
+        Thread.sleep(300);
+
+        alice.drainAvailable(500);
+        bob.drainAvailable(500);
+
+        MessageDTO badChunk = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "ALL", "chunk content");
+        badChunk.setMessageId("bad-msg");
+        badChunk.setChunkIndex(0);
+        badChunk.setTotalChunks(MessageDTO.MAX_TOTAL_CHUNKS + 1);
+        alice.out.writeObject(badChunk);
+        alice.out.flush();
+
+        MessageDTO normalMsg = new MessageDTO(
+                MessageDTO.MessageType.CHAT, "Alice", "ALL", "OK message");
+        alice.out.writeObject(normalMsg);
+        alice.out.flush();
+
+        MessageDTO received = bob.readUntilType(MessageDTO.MessageType.CHAT, 3000);
+        assertNotNull(received, "Bob powinien dostac normalna wiadomosc");
+        assertEquals("OK message", received.getContent(),
+                "Wiadomosc z za duza liczba chunkow powinna byc odrzucona");
+
+        alice.close();
+        bob.close();
+    }
+
     // klasa pomocnicza --------------------------------------
 
     // opakowuje polaczenie klienta z metodami do odczytu wiadomosci z timeoutem
@@ -279,12 +433,29 @@ class ClientServerIntegrationTest {
             }
         }
 
+        // odczytuje N wiadomosci z timeoutem (lacznym). zwraca liste odebranych
+        List<MessageDTO> readMessages(int count, int timeoutMs) throws Exception {
+            List<MessageDTO> messages = new ArrayList<>();
+            long deadline = System.currentTimeMillis() + timeoutMs;
+            while (messages.size() < count && System.currentTimeMillis() < deadline) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0)
+                    break;
+                MessageDTO msg = readMessage((int) remaining);
+                if (msg != null) {
+                    messages.add(msg);
+                }
+            }
+            return messages;
+        }
+
         // odczytuje wiadomosci az do znalezienia danego typu lub timeout
         MessageDTO readUntilType(MessageDTO.MessageType type, int timeoutMs) throws Exception {
             long deadline = System.currentTimeMillis() + timeoutMs;
             while (System.currentTimeMillis() < deadline) {
                 long remaining = deadline - System.currentTimeMillis();
-                if (remaining <= 0) break;
+                if (remaining <= 0)
+                    break;
                 MessageDTO msg = readMessage((int) remaining);
                 if (msg != null && msg.getType() == type) {
                     return msg;
