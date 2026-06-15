@@ -196,7 +196,7 @@ class ConnectionManagerTest {
     @Test
     @DisplayName("Wielowatkowa rejestracja roznych nickow - wszystkie powinny sie udac")
     void testConcurrentRegistration() throws Exception {
-        int threadCount = 20;
+        int threadCount = 50;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch startLatch = new CountDownLatch(1);
         List<Future<Boolean>> results = new ArrayList<>();
@@ -227,7 +227,7 @@ class ConnectionManagerTest {
     @Test
     @DisplayName("Wielowatkowa rejestracja tego samego nicku - dokladnie jeden watek wygrywa")
     void testConcurrentDuplicateRegistration() throws Exception {
-        int threadCount = 20;
+        int threadCount = 50;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch startLatch = new CountDownLatch(1);
         List<Future<Boolean>> results = new ArrayList<>();

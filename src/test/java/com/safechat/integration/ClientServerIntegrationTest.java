@@ -209,7 +209,7 @@ class ClientServerIntegrationTest {
     @Test
     @DisplayName("5 klientow laczy sie jednoczesnie i wszyscy otrzymuja broadcasty")
     void testMultipleClientsConcurrent() throws Exception {
-        int clientCount = 5;
+        int clientCount = 50;
         List<ClientConnection> clients = new ArrayList<>();
 
         // polaczenie klientow
