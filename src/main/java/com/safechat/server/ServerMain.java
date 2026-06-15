@@ -34,6 +34,7 @@ public class ServerMain {
         }
 
         System.out.println("Starting server on port " + port);
+        scanner.close();
 
         ConnectionManager connectionManager = new ConnectionManager();
 
