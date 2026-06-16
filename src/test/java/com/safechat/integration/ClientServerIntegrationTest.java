@@ -104,10 +104,8 @@ class ClientServerIntegrationTest {
         MessageDTO ok = alice1.readMessage(3000);
         assertEquals(MessageDTO.MessageType.JOIN_OK, ok.getType());
 
-        // krotka przerwa zeby serwer zdazyl zarejestrowac
         Thread.sleep(200);
 
-        // drugi klient z tym samym nickiem
         ClientConnection alice2 = connectClient("Alice");
         MessageDTO response = alice2.readMessage(3000);
         assertNotNull(response, "Serwer powinien odpowiedziec");
@@ -131,18 +129,13 @@ class ClientServerIntegrationTest {
         MessageDTO bobOk = bob.readMessage(3000);
         assertEquals(MessageDTO.MessageType.JOIN_OK, bobOk.getType());
 
-        // Bob powinien tez dostac klucz publiczny Alice (JOIN z kluczem)
-        // Alice powinna dostac broadcast o dolaczeniu Boba
-        // odczytujemy te wiadomosci zeby wyczyscic bufor
         Thread.sleep(300);
 
-        // Alice wysyla broadcast
         MessageDTO chatMsg = new MessageDTO(
                 MessageDTO.MessageType.CHAT, "Alice", "ALL", "Hej wszystkim!");
         alice.out.writeObject(chatMsg);
         alice.out.flush();
 
-        // szukamy wiadomosci CHAT wsrod odebranych
         MessageDTO received = alice.readUntilType(MessageDTO.MessageType.CHAT, 3000);
         assertNotNull(received, "Alice powinna otrzymac echo broadcastu");
         assertEquals("Hej wszystkim!", received.getContent());
@@ -162,13 +155,11 @@ class ClientServerIntegrationTest {
         bob.readMessage(3000); // JOIN_OK
         Thread.sleep(300);
 
-        // Alice wysyla prywatna wiadomosc do Boba (jawna, bez szyfrowania AES)
         MessageDTO privateMsg = new MessageDTO(
                 MessageDTO.MessageType.CHAT, "Alice", "Bob", "Sekretna wiadomosc!");
         alice.out.writeObject(privateMsg);
         alice.out.flush();
 
-        // Bob powinien ja otrzymac
         MessageDTO bobReceived = bob.readUntilType(MessageDTO.MessageType.CHAT, 3000);
         assertNotNull(bobReceived, "Bob powinien otrzymac prywatna wiadomosc");
         assertEquals("Sekretna wiadomosc!", bobReceived.getContent());
@@ -189,14 +180,12 @@ class ClientServerIntegrationTest {
         bob.readMessage(3000); // JOIN_OK
         Thread.sleep(300);
 
-        // Alice wysyla KEY_EXCHANGE do Boba
         byte[] fakeEncryptedKey = { 99, 88, 77, 66 };
         MessageDTO keyExMsg = new MessageDTO(
                 MessageDTO.MessageType.KEY_EXCHANGE, "Alice", "Bob", fakeEncryptedKey);
         alice.out.writeObject(keyExMsg);
         alice.out.flush();
 
-        // Bob powinien otrzymac KEY_EXCHANGE
         MessageDTO bobReceived = bob.readUntilType(MessageDTO.MessageType.KEY_EXCHANGE, 3000);
         assertNotNull(bobReceived, "Bob powinien otrzymac KEY_EXCHANGE");
         assertEquals("Alice", bobReceived.getSender());
@@ -212,7 +201,6 @@ class ClientServerIntegrationTest {
         int clientCount = 50;
         List<ClientConnection> clients = new ArrayList<>();
 
-        // polaczenie klientow
         for (int i = 0; i < clientCount; i++) {
             ClientConnection client = connectClient("User" + i);
             MessageDTO joinOk = client.readMessage(3000);
@@ -223,21 +211,17 @@ class ClientServerIntegrationTest {
             Thread.sleep(150);
         }
 
-        // czekamy az serwer przetworzy wszystkie JOINy
-        Thread.sleep(500);
+        Thread.sleep(100);
 
-        // oczyszczamy bufor kazdego klienta z wiadomosci JOIN broadcast
         for (ClientConnection client : clients) {
             client.drainAvailable(500);
         }
 
-        // User0 wysyla broadcast
         MessageDTO broadcastMsg = new MessageDTO(
                 MessageDTO.MessageType.CHAT, "User0", "ALL", "Wiadomosc do wszystkich!");
         clients.get(0).out.writeObject(broadcastMsg);
         clients.get(0).out.flush();
 
-        // kazdy klient powinien odebrac broadcast (lacznie z nadawca)
         for (int i = 0; i < clientCount; i++) {
             MessageDTO received = clients.get(i).readUntilType(MessageDTO.MessageType.CHAT, 3000);
             assertNotNull(received,
@@ -246,7 +230,6 @@ class ClientServerIntegrationTest {
                     "User" + i + " - tresc powinna sie zgadzac");
         }
 
-        // zamykanie
         for (ClientConnection client : clients) {
             client.close();
         }
@@ -405,7 +388,6 @@ class ClientServerIntegrationTest {
 
     // klasa pomocnicza --------------------------------------
 
-    // opakowuje polaczenie klienta z metodami do odczytu wiadomosci z timeoutem
     private static class ClientConnection {
         final Socket socket;
         final ObjectOutputStream out;
@@ -478,7 +460,6 @@ class ClientServerIntegrationTest {
                 }
                 socket.setSoTimeout(0);
             } catch (Exception e) {
-                // ignorujemy
             }
         }
 
@@ -486,7 +467,6 @@ class ClientServerIntegrationTest {
             try {
                 socket.close();
             } catch (Exception e) {
-                // ignorujemy
             }
         }
     }

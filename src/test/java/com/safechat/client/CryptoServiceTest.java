@@ -94,7 +94,7 @@ class CryptoServiceTest {
     @DisplayName("encryptMessage -> decryptMessage zwraca oryginalny tekst")
     void testAesEncryptDecryptRoundTrip() {
         SecretKey aesKey = cryptoService.generateAesKey();
-        String plainText = "To jest tajna wiadomosc!";
+        String plainText = "To jest tajemnicza tajna TopSecret wiadomosc";
 
         byte[] encrypted = cryptoService.encryptMessage(plainText, aesKey);
         assertNotNull(encrypted, "Zaszyfrowane dane nie powinny byc null");
@@ -108,7 +108,7 @@ class CryptoServiceTest {
     @DisplayName("Szyfrowanie i deszyfrowanie tekstu z polskimi znakami i emoji")
     void testAesEncryptDecryptUnicode() {
         SecretKey aesKey = cryptoService.generateAesKey();
-        String plainText = "Cześć! Jak się masz? 🔒🔑 Zażółć gęślą jaźń";
+        String plainText = "Cześć! Jak się masz? 🔒🔑 Zażółć gęślą jaźń, boże jaki cringe";
 
         byte[] encrypted = cryptoService.encryptMessage(plainText, aesKey);
         String decrypted = cryptoService.decryptMessage(encrypted, aesKey);
@@ -137,7 +137,7 @@ class CryptoServiceTest {
         byte[] encrypted = cryptoService.encryptMessage(plainText, aesKey);
         String decrypted = cryptoService.decryptMessage(encrypted, aesKey);
 
-        assertEquals(plainText, decrypted, "Dluga wiadomosc powinna byc zachowana");
+        assertEquals(plainText, decrypted, "Dluga wiadomosc powinna byc zachowana (quite big buddy)");
     }
 
     @Test
@@ -162,7 +162,7 @@ class CryptoServiceTest {
     void testDecryptWithWrongKeyFails() {
         SecretKey correctKey = cryptoService.generateAesKey();
         SecretKey wrongKey = cryptoService.generateAesKey();
-        String plainText = "Tajna wiadomosc";
+        String plainText = "No mowilem juz ze to tajna wiadomosc";
 
         byte[] encrypted = cryptoService.encryptMessage(plainText, correctKey);
 

@@ -20,7 +20,6 @@ class CryptoRoundTripTest {
         CryptoService bob = new CryptoService();
 
         // faza 1: wymiana kluczy publicznych RSA
-        // (normalnie odbywa sie to przez serwer przy JOIN)
         alice.storePublicKey("Bob", bob.getPublicKeyBytes());
         bob.storePublicKey("Alice", alice.getPublicKeyBytes());
 

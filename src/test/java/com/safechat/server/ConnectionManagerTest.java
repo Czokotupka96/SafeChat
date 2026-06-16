@@ -134,9 +134,7 @@ class ConnectionManagerTest {
 
         connectionManager.sendPrivateMessage(msg);
 
-        // bob powinien dostac wiadomosc
         verify(bobHandler).sendMessage(msg);
-        // alice powinna dostac echo (kopie)
         verify(aliceHandler).sendMessage(msg);
     }
 
@@ -151,7 +149,6 @@ class ConnectionManagerTest {
 
         connectionManager.sendPrivateMessage(msg);
 
-        // alice powinna dostac komunikat o bledzie od serwera
         verify(aliceHandler).sendMessage(argThat(errorMsg ->
                 errorMsg.getType() == MessageDTO.MessageType.CHAT
                         && errorMsg.getSender().equals("Server")
@@ -170,13 +167,9 @@ class ConnectionManagerTest {
         connectionManager.registerClient("Alice", aliceHandler);
         byte[] aliceKey = {1, 2, 3};
         connectionManager.storePublicKey("Alice", aliceKey);
-
         connectionManager.registerClient("Bob", bobHandler);
-
-        // wysylamy istniejace klucze do Boba
         connectionManager.sendExistingUsers("Bob", bobHandler);
 
-        // bob powinien dostac JOIN z kluczem Alice
         verify(bobHandler).sendMessage(argThat(joinMsg ->
                 joinMsg.getType() == MessageDTO.MessageType.JOIN
                         && joinMsg.getSender().equals("Alice")
@@ -205,12 +198,12 @@ class ConnectionManagerTest {
             final String nick = "User" + i;
             ClientHandler handler = mock(ClientHandler.class);
             results.add(executor.submit(() -> {
-                startLatch.await(); // czekamy az wszystkie watki beda gotowe
+                startLatch.await();
                 return connectionManager.registerClient(nick, handler);
             }));
         }
 
-        startLatch.countDown(); // start jednoczesny!
+        startLatch.countDown();
 
         int successCount = 0;
         for (Future<Boolean> future : results) {
@@ -222,7 +215,7 @@ class ConnectionManagerTest {
         executor.shutdown();
         assertEquals(threadCount, successCount,
                 "Wszystkie rozne nicki powinny byc zarejestrowane pomyslnie");
-    }
+        }
 
     @Test
     @DisplayName("Wielowatkowa rejestracja tego samego nicku - dokladnie jeden watek wygrywa")

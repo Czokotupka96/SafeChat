@@ -22,8 +22,7 @@ class NetworkServiceTest {
     void setUp() {
         lastError = new AtomicReference<>(null);
         networkService = new NetworkService(
-                msg -> {
-                    /* ignorujemy wiadomosci w testach jednostkowych */ },
+                msg -> {},
                 error -> lastError.set(error));
     }
 

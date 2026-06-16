@@ -126,19 +126,16 @@ class MessageDTOTest {
                                 MessageDTO.MessageType.JOIN, "Alice", "ALL", "Hello", pubKey);
                 original.setEncryptedPayload(new byte[] { 10, 20, 30 });
 
-                // serializacja do bajtow
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 ObjectOutputStream oos = new ObjectOutputStream(bos);
                 oos.writeObject(original);
                 oos.flush();
                 byte[] serialized = bos.toByteArray();
 
-                // deserializacja z bajtow
                 ByteArrayInputStream bis = new ByteArrayInputStream(serialized);
                 ObjectInputStream ois = new ObjectInputStream(bis);
                 MessageDTO restored = (MessageDTO) ois.readObject();
 
-                // weryfikacja pol
                 assertEquals(original.getType(), restored.getType());
                 assertEquals(original.getSender(), restored.getSender());
                 assertEquals(original.getRecipient(), restored.getRecipient());
@@ -246,13 +243,11 @@ class MessageDTOTest {
                 original.setChunkIndex(3);
                 original.setTotalChunks(7);
 
-                // serializacja
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 ObjectOutputStream oos = new ObjectOutputStream(bos);
                 oos.writeObject(original);
                 oos.flush();
 
-                // deserializacja
                 ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
                 ObjectInputStream ois = new ObjectInputStream(bis);
                 MessageDTO restored = (MessageDTO) ois.readObject();
